@@ -7,17 +7,19 @@ int main(int argc, char const *argv[]) {
     int sockfd;
     struct sockaddr_in saddr;
 
+    int me;
+
     int n;
     char buffer[1025]; // 1024 + \0
 
-printf("[Client] Hello\n");
+    me = getpid();
+
 
     /* Socket */
     if( (sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0 ){
-        perror("[Client] Error creating the socket\n");
+        fprintf(stdout, "[Client #%d] Error creating the socket\n", me);
         exit(EXIT_FAILURE);
     }
-printf("[Client] Sockfd is %d\n", sockfd);
 
     /* Connect */
     memset((void *)&saddr, 0, sizeof(saddr));
@@ -26,29 +28,29 @@ printf("[Client] Sockfd is %d\n", sockfd);
     // TODO saddr.sin_addr = htonl("127.0.0.1");
     inet_pton(AF_INET, "127.0.0.1", &saddr.sin_addr);
     if( (connect(sockfd, (struct sockaddr *)&saddr, sizeof(saddr))) < 0 ){
-        perror("[Client] Error in connecting to the server\n");
+        fprintf(stdout, "[Client #%d] Error in connecting to the server\n", me);
         exit(EXIT_FAILURE);
     }
-printf("[Client] Connected to 127.0.0.1 at %d\n", SERVER_PORT);
+printf("[Client #%d] Connected to 127.0.0.1 at %d.\n", me, SERVER_PORT);
 
     /* Job */
     while( (n = read(sockfd, buffer, 1024)) > 0 ){
         if(n<0){
-            perror("[Server] Error in read\n");
+            fprintf(stdout, "[Client #%d] Error in read\n", me);
             exit(EXIT_FAILURE);
         }
 
-        buffer[n] = 0; // TODO or '\0'
-        fputs(buffer, stdout);
+        buffer[n] = '\0';
+        fprintf(stdout, "%s\n", buffer);
     }
 
 
     /* Close */
     if( (close(sockfd)) < 0 ){
-        perror("[Client] Error in closing the client socket\n");
+        fprintf(stdout, "[Client #%d] Error in closing the client socket\n", me);
         exit(EXIT_FAILURE);
     }
-printf("[Client] Bye\n");
+fprintf(stdout, "[Client #%d] Bye\n", me);
 
     exit(EXIT_SUCCESS);
 }
