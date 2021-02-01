@@ -12,7 +12,8 @@ int main(int argc, char const *argv[]) {
     socklen_t len;
 
     const char *path; // TODO const or not?
-    char *buffer, *command;
+    char *buffer;
+    char *command;
 
     int fd;
 
