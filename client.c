@@ -33,6 +33,7 @@ int main(int argc, char const *argv[]) {
     }
 printf("[Client #%d] Connected to 127.0.0.1 at %d.\n", me, SERVER_PORT);
 
+printf("Available files:\n");
     /* Job */
     while( (n = read(sockfd, buffer, 1024)) > 0 ){
         if(n<0){
