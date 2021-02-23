@@ -3,19 +3,19 @@
 
 #define SERVER_PORT 5193
 #define BACKLOG 10
+#define BUFSIZE 1024
 
+void list(char **res, const char *path);
 
-int main(int argc, char const *argv[]) {
+int main(int argc, char const* argv[]) {
 
     int listensd, connsd;
     struct sockaddr_in saddr, caddr;
     socklen_t len;
 
-    const char *path; // TODO const or not?
-    char *buffer;
-    char *command;
-
-    int fd;
+    const char *path;
+    char *res = malloc(1024*sizeof(char));
+    char **resptr = &res;
 
     if(argc<2){
         fprintf(stderr, "[Usage]: %s <path>\n", argv[0]);
@@ -42,21 +42,31 @@ fprintf(stdout, "[Server] Ready to accept on port %d\n", SERVER_PORT);
         len = sizeof(caddr);
         check((connsd = accept(listensd, (struct sockaddr *)&caddr, &len)), "[Server] Error in listen");
 
-        // TODO printf("%u\n", caddr.sin_addr.s_addr);
 
-        // create list
-        sprintf(command, "ls %s | cat > list.txt", path);
-        system(command);
-        // save list on buffer
-        fd = open("list.txt", O_RDONLY);
-        read(fd, buffer, 1024);
-        // write socket
-        write(connsd, buffer, strlen(buffer));
+
+        list(resptr, path);
+
+        write(connsd, res, strlen(res));
+
+        char address[BUFSIZE];
+        inet_ntop(AF_INET, (struct sockaddr *)&caddr, address, sizeof(address));
+fprintf(stdout, "[Server] Bye %s client\n", address);
 
         check((close(connsd)), "[Server] Error in close");
-
-fprintf(stdout, "[Server] Bye client\n");
     }
 
     exit(EXIT_SUCCESS);
+}
+
+void list(char** res, const char* path){
+
+    char command[BUFSIZE];
+    FILE* file;
+
+    sprintf(command, "ls %s | cat > list.txt", path);
+    system(command);
+
+    file = fopen("list.txt", "r");
+    fread(*res, BUFSIZE, 1, file);
+
 }
