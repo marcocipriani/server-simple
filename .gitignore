@@ -1,6 +1,9 @@
 # Ignore all files without extensions = ignore all and unignore all with extensions
 *
 !*.*
+.*
+
+list.txt
 
 # Prerequisites
 *.d

@@ -1,67 +1,72 @@
 #include "headers.h"
+#include "error.c"
 
 #define SERVER_PORT 5193
 #define BACKLOG 10
+#define BUFSIZE 1024
 
-int main(int argc, char const *argv[]) {
+void list(char **res, const char *path);
+
+int main(int argc, char const* argv[]) {
 
     int listensd, connsd;
     struct sockaddr_in saddr, caddr;
     socklen_t len;
 
-    char *msg;
+    const char *path;
+    char *res = malloc(1024*sizeof(char));
+    char **resptr = &res;
 
     if(argc<2){
-        fprintf(stderr, "[Usage]: %s <msg>\n", argv[0]);
+        fprintf(stderr, "[Usage]: %s <path>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-    msg = argv[1];
+    path = argv[1];
 
-    /* Socket - Listen*/
-    if( (listensd = socket(AF_INET, SOCK_STREAM, 0)) < 0 ){
-        fprintf(stderr, "[Server] Error in socket\n");
-        exit(EXIT_FAILURE);
-    }
+    /* Socket */
+    check((listensd = socket(AF_INET, SOCK_STREAM, 0)), "[Server] Error in socket");
 
     /* Bind */
     memset((void *)&saddr, 0, sizeof(saddr));
     saddr.sin_family = AF_INET;
     saddr.sin_port = htons(SERVER_PORT);
     saddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    if( (bind(listensd, (struct sockaddr *)&saddr, sizeof(saddr))) < 0 ){
-        fprintf(stderr, "[Server] Error in bind\n");
-        exit(EXIT_FAILURE);
-    }
+    check((bind(listensd, (struct sockaddr *)&saddr, sizeof(saddr))),"[Server] Error in bind");
 
     /* Listen */
-    if( (listen(listensd, BACKLOG)) < 0 ){
-        fprintf(stderr, "[Server] Error in listen");
-        exit(EXIT_FAILURE);
-    }
+    check((listen(listensd, BACKLOG)), "[Server] Error in listen");
 fprintf(stdout, "[Server] Ready to accept on port %d\n", SERVER_PORT);
 
     while(1){
         /* Accept */
         len = sizeof(caddr);
-        if( (connsd = accept(listensd, (struct sockaddr *)&caddr, &len)) < 0 ){
-            fprintf(stderr, "[Server] Error in listen");
-            exit(EXIT_FAILURE);
-        }
+        check((connsd = accept(listensd, (struct sockaddr *)&caddr, &len)), "[Server] Error in listen");
 
-        // TODO printf("%u\n", caddr.sin_addr.s_addr);
 
-        if( (write(connsd, msg, strlen(msg))) != strlen(msg) ){
-            fprintf(stderr, "[Server] Error in write");
-            exit(EXIT_FAILURE);
-        }
 
-        if( (close(connsd)) < 0){
-            fprintf(stderr, "[Server] Error in close");
-            exit(EXIT_FAILURE);
-        }
+        list(resptr, path);
 
-fprintf(stdout, "[Server] Bye client\n");
+        write(connsd, res, strlen(res));
+
+        char address[BUFSIZE];
+        inet_ntop(AF_INET, (struct sockaddr *)&caddr, address, sizeof(address));
+fprintf(stdout, "[Server] Bye %s client\n", address);
+
+        check((close(connsd)), "[Server] Error in close");
     }
 
     exit(EXIT_SUCCESS);
+}
+
+void list(char** res, const char* path){
+
+    char command[BUFSIZE];
+    FILE* file;
+
+    sprintf(command, "ls %s | cat > list.txt", path);
+    system(command);
+
+    file = fopen("list.txt", "r");
+    fread(*res, BUFSIZE, 1, file);
+
 }
