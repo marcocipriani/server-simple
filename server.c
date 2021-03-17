@@ -3,13 +3,21 @@
 #define SERVER_PORT 5193
 #define BACKLOG 10
 
+int connsd;
+char *msg;
+
+void list(){
+    if( (write(connsd, msg, strlen(msg))) != strlen(msg) ){
+        fprintf(stderr, "[Server] Error in write");
+        exit(EXIT_FAILURE);
+    }
+}
+
 int main(int argc, char const *argv[]) {
 
-    int listensd, connsd;
+    int listensd;
     struct sockaddr_in saddr, caddr;
     socklen_t len;
-
-    char *msg;
 
     if(argc<2){
         fprintf(stderr, "[Usage]: %s <msg>\n", argv[0]);
@@ -50,10 +58,7 @@ fprintf(stdout, "[Server] Ready to accept on port %d\n", SERVER_PORT);
 
         // TODO printf("%u\n", caddr.sin_addr.s_addr);
 
-        if( (write(connsd, msg, strlen(msg))) != strlen(msg) ){
-            fprintf(stderr, "[Server] Error in write");
-            exit(EXIT_FAILURE);
-        }
+        list();
 
         if( (close(connsd)) < 0){
             fprintf(stderr, "[Server] Error in close");

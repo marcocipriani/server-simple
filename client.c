@@ -2,26 +2,29 @@
 
 #define SERVER_PORT   5193
 
-int main(int argc, char const *argv[]) {
+int me;
 
-    int sockfd;
-    struct sockaddr_in saddr;
+int sockfd;
+char buffer[1025]; // 1024 + \0
 
-    int me;
-
-    int n;
-    char buffer[1025]; // 1024 + \0
-
-    me = getpid();
-
-
-    /* Socket */
+void sockinit(){
     if( (sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0 ){
         fprintf(stdout, "[Client #%d] Error creating the socket\n", me);
         exit(EXIT_FAILURE);
     }
+}
 
-    /* Connect */
+void sockclose(){
+    if( (close(sockfd)) < 0 ){
+        fprintf(stdout, "[Client #%d] Error in closing the client socket\n", me);
+        exit(EXIT_FAILURE);
+    }
+fprintf(stdout, "[Client #%d] Bye\n", me);
+}
+
+void servconnect(){
+    struct sockaddr_in saddr;
+
     memset((void *)&saddr, 0, sizeof(saddr));
     saddr.sin_family = AF_INET;
     saddr.sin_port = htons(SERVER_PORT);
@@ -32,8 +35,11 @@ int main(int argc, char const *argv[]) {
         exit(EXIT_FAILURE);
     }
 printf("[Client #%d] Connected to 127.0.0.1 at %d.\n", me, SERVER_PORT);
+}
 
-    /* Job */
+int list(){
+    int n;
+
     while( (n = read(sockfd, buffer, 1024)) > 0 ){
         if(n<0){
             fprintf(stdout, "[Client #%d] Error in read\n", me);
@@ -44,13 +50,39 @@ printf("[Client #%d] Connected to 127.0.0.1 at %d.\n", me, SERVER_PORT);
         fprintf(stdout, "%s\n", buffer);
     }
 
+    exit(EXIT_SUCCESS);
+}
 
-    /* Close */
-    if( (close(sockfd)) < 0 ){
-        fprintf(stdout, "[Client #%d] Error in closing the client socket\n", me);
+int main(int argc, char const *argv[]) {
+    int opt;
+
+    /* Usage */
+    if(argc<2){
+        fprintf(stderr, "[Usage] %s <command number> [<filename>]\ncommand number: 0 (list), 1 (get), 2 (put)\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-fprintf(stdout, "[Client #%d] Bye\n", me);
+
+    me = getpid();
+    opt = atoi(argv[1]);
+printf("[Client #%d] Requesting %d command.\n", me, opt);
+
+    sockinit();
+    servconnect();
+
+    /* Job selection */
+    switch (opt) {
+        case 0:
+            list();
+            break;
+        case 1:
+            printf("get\n");
+            break;
+        case 2:
+            printf("put\n");
+            break;
+    }
+
+    sockclose();
 
     exit(EXIT_SUCCESS);
 }
