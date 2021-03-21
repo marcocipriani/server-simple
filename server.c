@@ -5,8 +5,43 @@
 #define BACKLOG 10
 #define BUFSIZE 1024
 
-int connsd;
+int sockd;
 char *msg;
+struct sockaddr_in cliaddr;
+socklen_t len;
+
+void setsock(){
+    struct sockaddr_in servaddr;
+
+    check((sockd = socket(AF_INET, SOCK_DGRAM, 0)), "[Server] Error in socket");
+
+    memset((void *)&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(SERVER_PORT);
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    check((bind(sockd, (struct sockaddr *)&servaddr, sizeof(servaddr))),"[Server] Error in bind");
+
+fprintf(stdout, "[Server] Ready to accept on port %d\n", SERVER_PORT);
+}
+
+int waitforop(){
+    char *cmdreq;
+    cmdreq = malloc(BUFSIZE * sizeof(char));
+
+    memset((void *)&cliaddr, 0, sizeof(cliaddr));
+    len = sizeof(cliaddr);
+    recvfrom(sockd, cmdreq, BUFSIZE, 0, (struct sockaddr *)&cliaddr, &len);
+
+    char *ok = "ok";
+    check( sendto(sockd, (char *)ok, strlen(ok), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server reply error");
+printf("[Server] Operation %s from client #%d %s\n", cmdreq, cliaddr.sin_port, ok);
+
+    if(strcmp(cmdreq, "list") == 0) {
+        return 0;
+    }
+
+    return -1;
+}
 
 void list(char** res, const char* path){
     char command[BUFSIZE];
@@ -17,15 +52,11 @@ void list(char** res, const char* path){
 
     file = fopen("list.txt", "r");
     fread(*res, BUFSIZE, 1, file);
-
 }
 
 int main(int argc, char const* argv[]) {
-    int listensd;
-    struct sockaddr_in saddr, caddr;
-    socklen_t len;
-
     int opt;
+
 
     const char *path;
     char *res = malloc(1024*sizeof(char));
@@ -37,38 +68,24 @@ int main(int argc, char const* argv[]) {
     }
     path = argv[1];
 
-    /* Socket */
-    check((listensd = socket(AF_INET, SOCK_STREAM, 0)), "[Server] Error in socket");
-
-    /* Bind */
-    memset((void *)&saddr, 0, sizeof(saddr));
-    saddr.sin_family = AF_INET;
-    saddr.sin_port = htons(SERVER_PORT);
-    saddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    check((bind(listensd, (struct sockaddr *)&saddr, sizeof(saddr))),"[Server] Error in bind");
-
-    /* Listen */
-    check((listen(listensd, BACKLOG)), "[Server] Error in listen");
-fprintf(stdout, "[Server] Ready to accept on port %d\n", SERVER_PORT);
+    setsock();
 
     while(1){
-        /* Accept */
-        len = sizeof(caddr);
-        check((connsd = accept(listensd, (struct sockaddr *)&caddr, &len)), "[Server] Error in listen");
 
-        //read(connsd, opt, sizeof(int));
-printf("Opt: %d\n", opt);
+        opt = waitforop();
 
-        list(resptr, path);
+        switch (opt) {
+            case 0:
+                list(resptr, path);
+                check( sendto(sockd, (char *)res, strlen(res), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server sending res error");
+fprintf(stdout, "[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
+                break;
+            default:
+fprintf(stdout, "[Server] Can't handle client #%d operation...\n\n", cliaddr.sin_port);
+                break;
+        }
 
-        write(connsd, res, strlen(res));
-
-        char address[BUFSIZE];
-        inet_ntop(AF_INET, (struct sockaddr *)&caddr, address, sizeof(address));
-fprintf(stdout, "[Server] Bye %s client\n", address);
-
-        check((close(connsd)), "[Server] Error in close");
     }
 
-    exit(EXIT_SUCCESS);
+    exit(EXIT_FAILURE);
 }

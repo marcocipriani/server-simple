@@ -2,70 +2,84 @@
 #include "error.c"
 
 #define SERVER_PORT 5193
+#define SERVER_ADDR "127.0.0.1"
 #define BUFSIZE 1024
-#define SADDR "127.0.0.1"
 
 int me;
-int sockfd;
+int sockd;
+struct sockaddr_in servaddr;
 
-void closeconn(){
-    if(!sockfd){
-        check(close(sockfd), "[Client] Error in closing the client socket");
+void setsock(){
+    check( (sockd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) ), "Error creating the datagram socket");
+
+    memset((void *)&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(SERVER_PORT);
+    // servaddr.sin_addr.s_addr = INADDR_ANY;
+    if( (inet_pton(AF_INET, SERVER_ADDR, &servaddr.sin_addr)) <= 0){
+        printf("Error inet_pton\n");
+        exit(EXIT_FAILURE);
     }
+
+printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
 }
 
-void openconn(){
-    struct sockaddr_in saddr;
+socklen_t len;
 
-    check( (sockfd = socket(AF_INET, SOCK_STREAM, 0) ), "Error creating the stream socket");
+void setop(int cmd){
+    int n;
+    char *rcvbuf;
+    char *oper;
 
-    memset((void *)&saddr, 0, sizeof(saddr));
-    saddr.sin_family = AF_INET;
-    saddr.sin_port = htons(SERVER_PORT);
-    inet_pton(AF_INET, SADDR, &saddr.sin_addr);
-    check(connect(sockfd, (struct sockaddr *)&saddr, sizeof(saddr)), "Error in connecting to the server");
-printf("[Client #%d] Connected to %s at %d.\n", me, SADDR, SERVER_PORT);
+
+    switch (cmd) {
+        case 0:
+            oper = "list";
+    }
+
+    check( (sendto(sockd, (char *)oper, sizeof(oper), 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) ), "Error setop" );
+
+    rcvbuf = malloc(BUFSIZE * sizeof(char));
+    n = recvfrom(sockd, rcvbuf, BUFSIZE, 0, (struct sockaddr *)&servaddr, &len);
+printf("server said: %s\n", rcvbuf);
 }
 
 void list(){
     int n;
     char buffer[BUFSIZE + 1]; // 1024 + \0
 
-    while( (n = read(sockfd, buffer, BUFSIZE)) > 0 ){
-        check(n, "[Client] Error in read");
-
-printf("Available files on server:\n");
-        buffer[n] = '\0';
-        fprintf(stdout, "%s\n", buffer);
+    n = recvfrom(sockd, buffer, BUFSIZE, 0, (struct sockaddr *)&servaddr, &len);
+    if(n > 0){
+        printf("Available files on server:\n");
+            buffer[n] = '\0';
+            fprintf(stdout, "%s", buffer);
     }
 }
 
 int main(int argc, char const *argv[]) {
-    int opt;
+    int oper;
 
     /* Usage */
-    if(argc != 1){
-        fprintf(stderr, "Extra parameters are discarded. [Usage] %s\n", argv[0]);
+    if(argc > 2){
+        fprintf(stderr, "Extra parameters are discarded. [Usage] %s <command number>\n", argv[0]);
     }
 
     me = getpid();
-    sockfd = 0;
 
 printf("Welcome to server-simple app, client #%d\n", me);
 
+    setsock();
+
     while (1) {
-        printf("Available command numbers: 0 (list available files), 1 (get a file), 2 (put a file), 3 (exit)\nPlease insert a command number and press ENTER: ");
-        fscanf(stdin, "%d", &opt);
+        printf("\nAvailable operations: 0 (list available files), 1 (get a file), 2 (put a file), 3 (exit).\nChoose an operation and press ENTER: ");
+        fscanf(stdin, "%d", &oper);
+printf("[Client #%d] Requesting %d operation...\n", me, oper);
 
-printf("[Client #%d] Requesting %d command.\n", me, opt);
-
-        /* Job selection */
-        switch (opt) {
+        /* Operation selection */
+        switch (oper) {
             case 0: // list
-            //write(sockfd, 1, sizeof(int));
-                openconn();
+                setop(0);
                 list();
-                closeconn();
                 break;
             case 1: // get
                 printf("get\n");
@@ -74,14 +88,30 @@ printf("[Client #%d] Requesting %d command.\n", me, opt);
                 printf("put\n");
                 break;
             case 3: // exit
-                closeconn();
                 fprintf(stdout, "Bye client #%d\n", me);
                 exit(EXIT_SUCCESS);
             default:
-                printf("Invalid command number\n");
+                printf("No operation associated with %d\n", oper);
                 break;
         }
     }
 
     exit(EXIT_FAILURE);
+}
+
+void closeconn(){
+    if(sockd){
+        check(close(sockd), "[Client] Error in closing the client socket");
+    }
+}
+
+void tcpconn(){
+    check( (sockd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) ), "Error creating the stream socket");
+
+    memset((void *)&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(SERVER_PORT);
+    inet_pton(AF_INET, SERVER_ADDR, &servaddr.sin_addr);
+    check(connect(sockd, (struct sockaddr *)&servaddr, sizeof(servaddr)), "Error in connecting to the server");
+printf("[Client #%d] Connected to %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
 }
