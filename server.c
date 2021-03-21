@@ -5,13 +5,27 @@
 #define BACKLOG 10
 #define BUFSIZE 1024
 
-void list(char **res, const char *path);
+int connsd;
+char *msg;
+
+void list(char** res, const char* path){
+    char command[BUFSIZE];
+    FILE* file;
+
+    sprintf(command, "ls %s | cat > list.txt", path);
+    system(command);
+
+    file = fopen("list.txt", "r");
+    fread(*res, BUFSIZE, 1, file);
+
+}
 
 int main(int argc, char const* argv[]) {
-
-    int listensd, connsd;
+    int listensd;
     struct sockaddr_in saddr, caddr;
     socklen_t len;
+
+    int opt;
 
     const char *path;
     char *res = malloc(1024*sizeof(char));
@@ -42,7 +56,8 @@ fprintf(stdout, "[Server] Ready to accept on port %d\n", SERVER_PORT);
         len = sizeof(caddr);
         check((connsd = accept(listensd, (struct sockaddr *)&caddr, &len)), "[Server] Error in listen");
 
-
+        //read(connsd, opt, sizeof(int));
+printf("Opt: %d\n", opt);
 
         list(resptr, path);
 
@@ -56,17 +71,4 @@ fprintf(stdout, "[Server] Bye %s client\n", address);
     }
 
     exit(EXIT_SUCCESS);
-}
-
-void list(char** res, const char* path){
-
-    char command[BUFSIZE];
-    FILE* file;
-
-    sprintf(command, "ls %s | cat > list.txt", path);
-    system(command);
-
-    file = fopen("list.txt", "r");
-    fread(*res, BUFSIZE, 1, file);
-
 }
