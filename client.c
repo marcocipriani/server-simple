@@ -70,9 +70,16 @@ printf("Welcome to server-simple app, client #%d\n", me);
 
     setsock();
 
+    if(argc==2){
+        oper = atoi(argv[1]);
+printf("Quickstart\n");
+        goto quickstart;
+    }
+
     while (1) {
         printf("\nAvailable operations: 0 (list available files), 1 (get a file), 2 (put a file), 3 (exit).\nChoose an operation and press ENTER: ");
         fscanf(stdin, "%d", &oper);
+quickstart:
 printf("[Client #%d] Requesting %d operation...\n", me, oper);
 
         /* Operation selection */

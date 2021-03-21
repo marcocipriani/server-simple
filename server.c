@@ -75,10 +75,14 @@ int main(int argc, char const* argv[]) {
         opt = waitforop();
 
         switch (opt) {
-            case 0:
+            case 0: // list
                 list(resptr, path);
                 check( sendto(sockd, (char *)res, strlen(res), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server sending res error");
 fprintf(stdout, "[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
+                break;
+            case 1: // get
+                break;
+            case 2: // put
                 break;
             default:
 fprintf(stdout, "[Server] Can't handle client #%d operation...\n\n", cliaddr.sin_port);
