@@ -1,46 +1,118 @@
 #include "headers.h"
+#include "config.h"
 #include "error.c"
 
-#define SERVER_PORT 5193
-#define BUFSIZE 1024
+int me;
+int sockd;
+struct sockaddr_in servaddr, cliaddr;
+socklen_t len;
 
-int main(int argc, char const *argv[]) {
+void setsock(){
+    check( (sockd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) ), "Error creating the datagram socket");
+    //memset((void *)&cliaddr, 0, sizeof(cliaddr));
+    socklen_t clen = sizeof(cliaddr);
+    check( (getsockname(sockd, (struct sockaddr *)&cliaddr, &clen) ), "Error getting sock name");
+    me = ntohs(cliaddr.sin_port);
+printf("I'm %d\n", me);
 
-    int sockfd;
-    struct sockaddr_in saddr;
+    memset((void *)&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(SERVER_PORT);
+    if( (inet_pton(AF_INET, SERVER_ADDR, &servaddr.sin_addr)) <= 0){
+        printf("Error inet_pton\n");
+        exit(EXIT_FAILURE);
+    }
 
-    int me;
+printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
+}
 
+void setop(int cmd){
+    int n;
+    char *rcvbuf;
+    char *oper;
+
+    switch (cmd) {
+        case 1:
+            oper = "list";
+            break;
+        case 2:
+            oper = "get";
+            break;
+        case 3:
+            oper = "put";
+            break;
+    }
+
+    check( (sendto(sockd, (char *)oper, sizeof(oper), 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) ), "Error setop" );
+
+    rcvbuf = malloc(BUFSIZE * sizeof(char));
+    n = recvfrom(sockd, rcvbuf, BUFSIZE, 0, (struct sockaddr *)&servaddr, &len);
+printf("Server said: %s\n", rcvbuf);
+}
+
+void list(){
     int n;
     char buffer[BUFSIZE + 1]; // 1024 + \0
 
+    n = recvfrom(sockd, buffer, BUFSIZE, 0, (struct sockaddr *)&servaddr, &len);
+    if(n > 0){
+        printf("Available files on server:\n");
+            buffer[n] = '\0';
+            fprintf(stdout, "%s", buffer);
+    } else {
+        printf("No available files on server\n");
+    }
+}
+
+int main(int argc, char const *argv[]) {
+    int op;
+
     me = getpid();
 
-    /* Socket */
-    check( (sockfd = socket(AF_INET, SOCK_STREAM, 0) ), "Error creating the socket");
-
-    /* Connect */
-    memset((void *)&saddr, 0, sizeof(saddr));
-    saddr.sin_family = AF_INET;
-    saddr.sin_port = htons(SERVER_PORT);
-    inet_pton(AF_INET, "127.0.0.1", &saddr.sin_addr);
-    check(connect(sockfd, (struct sockaddr *)&saddr, sizeof(saddr)), "Error in connecting to the server");
-printf("[Client #%d] Connected to 127.0.0.1 at %d.\n", me, SERVER_PORT);
-
-    /* Job */
-    while( (n = read(sockfd, buffer, BUFSIZE)) > 0 ){
-        check(n, "[Client] Error in read");
-
-printf("Available files on server:\n");
-        buffer[n] = '\0';
-        fprintf(stdout, "%s\n", buffer);
+    /* Usage */
+    if(argc > 2){
+        fprintf(stderr, "Quickstart with %s, extra parameters are discarded.\n[Usage] %s <operation-number>\n", argv[1], argv[0]);
     }
 
+printf("Welcome to server-simple app, client #%d\n", me);
 
-    /* Close */
-    check(close(sockfd), "[Client] Error in closing the client socket");
+    /* Socket + filling servaddr */
+    setsock();
 
-fprintf(stdout, "[Client #%d] Bye\n", me);
+    if(argc == 2){
+        op = atoi(argv[1]);
+        goto quickstart;
+    }
 
-    exit(EXIT_SUCCESS);
+    while (1) {
+        /* Parsing input */
+        printf("\nAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\nChoose an operation and press ENTER: ");
+        fscanf(stdin, "%d", &op);
+
+quickstart:
+        /* Operation selection */
+        switch (op) {
+            case 1: // list
+printf("[Client #%d] Requesting list operation...\n", me);
+                setop(1);
+                list();
+                break;
+            case 2: // get
+printf("[Client #%d] Requesting get operation...\n", me);
+                setop(2);
+                break;
+            case 3: // put
+printf("[Client #%d] Requesting put operation...\n", me);
+                setop(3);
+                break;
+            case 0: // exit
+                fprintf(stdout, "Bye client #%d\n", me);
+                exit(EXIT_SUCCESS);
+            default:
+                printf("No operation associated with %d\n", op);
+                break;
+        }
+    }
+
+    exit(EXIT_FAILURE);
 }
