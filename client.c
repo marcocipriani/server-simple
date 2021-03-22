@@ -7,16 +7,20 @@
 
 int me;
 int sockd;
-struct sockaddr_in servaddr;
+struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
 
 void setsock(){
     check( (sockd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) ), "Error creating the datagram socket");
+    //memset((void *)&cliaddr, 0, sizeof(cliaddr));
+    socklen_t clen = sizeof(cliaddr);
+    check( (getsockname(sockd, (struct sockaddr *)&cliaddr, &clen) ), "Error getting sock name");
+    me = ntohs(cliaddr.sin_port);
+printf("I'm %d\n", me);
 
     memset((void *)&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(SERVER_PORT);
-    // servaddr.sin_addr.s_addr = INADDR_ANY;
     if( (inet_pton(AF_INET, SERVER_ADDR, &servaddr.sin_addr)) <= 0){
         printf("Error inet_pton\n");
         exit(EXIT_FAILURE);
@@ -33,10 +37,13 @@ void setop(int cmd){
     switch (cmd) {
         case 1:
             oper = "list";
+            break;
         case 2:
             oper = "get";
+            break;
         case 3:
             oper = "put";
+            break;
     }
 
     check( (sendto(sockd, (char *)oper, sizeof(oper), 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) ), "Error setop" );
@@ -67,35 +74,38 @@ int main(int argc, char const *argv[]) {
 
     /* Usage */
     if(argc > 2){
-        fprintf(stderr, "Extra parameters are discarded. [Usage] %s <operation-number>\n", argv[0]);
+        fprintf(stderr, "Quickstart with %s, extra parameters are discarded.\n[Usage] %s <operation-number>\n", argv[1], argv[0]);
     }
 
 printf("Welcome to server-simple app, client #%d\n", me);
 
+    /* Socket + filling servaddr */
     setsock();
 
     if(argc == 2){
         op = atoi(argv[1]);
-printf("Quickstart\n");
         goto quickstart;
     }
 
     while (1) {
-        printf("\nAvailable operations: 0 (list available files), 1 (get a file), 2 (put a file), 3 (exit).\nChoose an operation and press ENTER: ");
+        /* Parsing input */
+        printf("\nAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\nChoose an operation and press ENTER: ");
         fscanf(stdin, "%d", &op);
-quickstart:
-printf("[Client #%d] Requesting %d operation...\n", me, op);
 
+quickstart:
         /* Operation selection */
         switch (op) {
             case 1: // list
+printf("[Client #%d] Requesting list operation...\n", me);
                 setop(1);
                 list();
                 break;
             case 2: // get
+printf("[Client #%d] Requesting get operation...\n", me);
                 setop(2);
                 break;
             case 3: // put
+printf("[Client #%d] Requesting put operation...\n", me);
                 setop(3);
                 break;
             case 0: // exit

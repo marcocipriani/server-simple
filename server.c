@@ -36,13 +36,9 @@ int waitforop(){
     check( sendto(sockd, (char *)ok, strlen(ok), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server reply error");
 printf("[Server] Operation %s from client #%d %s\n", cmdreq, cliaddr.sin_port, ok);
 
-    if(strcmp(cmdreq, "list") == 0){
-        return 1;
-    } else if (strcmp(cmdreq, "get") == 0){
-        return 2;
-    } else if (strcmp(cmdreq, "put") == 0){
-        return 3;
-    }
+    if(strcmp(cmdreq, "list") == 0){ return 1; }
+    if(strcmp(cmdreq, "get") == 0){ return 2; }
+    if(strcmp(cmdreq, "put") == 0){ return 3; }
 
     return -1;
 }
