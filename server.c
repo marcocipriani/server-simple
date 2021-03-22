@@ -1,9 +1,8 @@
 #include "headers.h"
+#include "config.h"
 #include "error.c"
 
-#define SERVER_PORT 5193
-#define BACKLOG 10
-#define BUFSIZE 1024
+
 
 int sockd;
 char *msg;
