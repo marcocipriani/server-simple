@@ -36,8 +36,12 @@ int waitforop(){
     check( sendto(sockd, (char *)ok, strlen(ok), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server reply error");
 printf("[Server] Operation %s from client #%d %s\n", cmdreq, cliaddr.sin_port, ok);
 
-    if(strcmp(cmdreq, "list") == 0) {
-        return 0;
+    if(strcmp(cmdreq, "list") == 0){
+        return 1;
+    } else if (strcmp(cmdreq, "get") == 0){
+        return 2;
+    } else if (strcmp(cmdreq, "put") == 0){
+        return 3;
     }
 
     return -1;
@@ -55,11 +59,10 @@ void list(char** res, const char* path){
 }
 
 int main(int argc, char const* argv[]) {
-    int opt;
-
+    int op;
 
     const char *path;
-    char *res = malloc(1024*sizeof(char));
+    char *res = malloc(BUFSIZE * sizeof(char));
     char **resptr = &res;
 
     if(argc<2){
@@ -72,23 +75,22 @@ int main(int argc, char const* argv[]) {
 
     while(1){
 
-        opt = waitforop();
+        op = waitforop();
 
-        switch (opt) {
-            case 0: // list
+        switch (op) {
+            case 1: // list
                 list(resptr, path);
                 check( sendto(sockd, (char *)res, strlen(res), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server sending res error");
 fprintf(stdout, "[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
                 break;
-            case 1: // get
+            case 2: // get
                 break;
-            case 2: // put
+            case 3: // put
                 break;
             default:
 fprintf(stdout, "[Server] Can't handle client #%d operation...\n\n", cliaddr.sin_port);
                 break;
         }
-
     }
 
     exit(EXIT_FAILURE);

@@ -8,6 +8,7 @@
 int me;
 int sockd;
 struct sockaddr_in servaddr;
+socklen_t len;
 
 void setsock(){
     check( (sockd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) ), "Error creating the datagram socket");
@@ -24,24 +25,25 @@ void setsock(){
 printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
 }
 
-socklen_t len;
-
 void setop(int cmd){
     int n;
     char *rcvbuf;
     char *oper;
 
-
     switch (cmd) {
-        case 0:
+        case 1:
             oper = "list";
+        case 2:
+            oper = "get";
+        case 3:
+            oper = "put";
     }
 
     check( (sendto(sockd, (char *)oper, sizeof(oper), 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) ), "Error setop" );
 
     rcvbuf = malloc(BUFSIZE * sizeof(char));
     n = recvfrom(sockd, rcvbuf, BUFSIZE, 0, (struct sockaddr *)&servaddr, &len);
-printf("server said: %s\n", rcvbuf);
+printf("Server said: %s\n", rcvbuf);
 }
 
 void list(){
@@ -53,52 +55,54 @@ void list(){
         printf("Available files on server:\n");
             buffer[n] = '\0';
             fprintf(stdout, "%s", buffer);
+    } else {
+        printf("No available files on server\n");
     }
 }
 
 int main(int argc, char const *argv[]) {
-    int oper;
+    int op;
+
+    me = getpid();
 
     /* Usage */
     if(argc > 2){
-        fprintf(stderr, "Extra parameters are discarded. [Usage] %s <command number>\n", argv[0]);
+        fprintf(stderr, "Extra parameters are discarded. [Usage] %s <operation-number>\n", argv[0]);
     }
-
-    me = getpid();
 
 printf("Welcome to server-simple app, client #%d\n", me);
 
     setsock();
 
-    if(argc==2){
-        oper = atoi(argv[1]);
+    if(argc == 2){
+        op = atoi(argv[1]);
 printf("Quickstart\n");
         goto quickstart;
     }
 
     while (1) {
         printf("\nAvailable operations: 0 (list available files), 1 (get a file), 2 (put a file), 3 (exit).\nChoose an operation and press ENTER: ");
-        fscanf(stdin, "%d", &oper);
+        fscanf(stdin, "%d", &op);
 quickstart:
-printf("[Client #%d] Requesting %d operation...\n", me, oper);
+printf("[Client #%d] Requesting %d operation...\n", me, op);
 
         /* Operation selection */
-        switch (oper) {
-            case 0: // list
-                setop(0);
+        switch (op) {
+            case 1: // list
+                setop(1);
                 list();
                 break;
-            case 1: // get
-                printf("get\n");
+            case 2: // get
+                setop(2);
                 break;
-            case 2: // put
-                printf("put\n");
+            case 3: // put
+                setop(3);
                 break;
-            case 3: // exit
+            case 0: // exit
                 fprintf(stdout, "Bye client #%d\n", me);
                 exit(EXIT_SUCCESS);
             default:
-                printf("No operation associated with %d\n", oper);
+                printf("No operation associated with %d\n", op);
                 break;
         }
     }
