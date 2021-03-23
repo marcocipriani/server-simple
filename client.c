@@ -1,7 +1,6 @@
 #include "headers.h"
 #include "config.h"
 #include "common.c"
-#include "error.c"
 
 int me;
 int sockd;
@@ -11,11 +10,12 @@ socklen_t len;
 
 void setsock(){
     check( (sockd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) ), "Error creating the datagram socket");
+/* TODO client id = port
     memset((void *)&cliaddr, 0, sizeof(cliaddr));
     socklen_t clen = sizeof(cliaddr);
     check( (getsockname(sockd, (struct sockaddr *)&cliaddr, &clen) ), "Error getting sock name");
     me = ntohs(cliaddr.sin_port);
-printf("I'm %d\n", me);
+*/
 
     memset((void *)&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
@@ -26,20 +26,6 @@ printf("I'm %d\n", me);
     }
 
 printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
-}
-
-struct pkt *makepkt(int seq, int ack, int flag, int op, void *data){
-    struct pkt *packet;
-
-    packet = (struct pkt *)malloc(sizeof(struct pkt));
-    packet->seq = seq;
-    packet->ack = ack;
-    packet->flag = flag;
-    packet->op = op;
-    packet->length = strlen( (char *)data);
-    memcpy(packet->data, data, sizeof(data));
-
-    return packet;
 }
 
 void setop(int cmd){
@@ -80,7 +66,7 @@ int main(int argc, char const *argv[]) {
 
     /* Usage */
     if(argc > 2){
-        fprintf(stderr, "Quickstart with %s, extra parameters are discarded.\n[Usage] %s <operation-number>\n", argv[1], argv[0]);
+        fprintf(stderr, "Quickstart with %s, extra parameters are discarded.\n[Usage] %s [<operation-number>]\n", argv[1], argv[0]);
     }
 
 printf("Welcome to server-simple app, client #%d\n", me);

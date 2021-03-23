@@ -1,7 +1,6 @@
 #include "headers.h"
 #include "config.h"
 #include "common.c"
-#include "error.c"
 
 int sockd;
 char *msg;
