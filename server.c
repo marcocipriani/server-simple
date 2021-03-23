@@ -1,13 +1,15 @@
 #include "headers.h"
 #include "config.h"
+#include "common.c"
 #include "error.c"
-
-
 
 int sockd;
 char *msg;
 struct sockaddr_in cliaddr;
 socklen_t len;
+
+// int flowcount;
+// TODO updatecount(){ ...critic zone... }
 
 void setsock(){
     struct sockaddr_in servaddr;

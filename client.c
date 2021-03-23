@@ -1,5 +1,6 @@
 #include "headers.h"
 #include "config.h"
+#include "common.c"
 #include "error.c"
 
 int me;
@@ -10,7 +11,8 @@ socklen_t len;
 void setsock(){
     check( (sockd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) ), "Error creating the datagram socket");
     //memset((void *)&cliaddr, 0, sizeof(cliaddr));
-    socklen_t clen = sizeof(cliaddr);
+    cliaddr = (struct sockaddr *)malloc(sizeof(cliaddr));
+    socklen_t clen;
     check( (getsockname(sockd, (struct sockaddr *)&cliaddr, &clen) ), "Error getting sock name");
     me = ntohs(cliaddr.sin_port);
 printf("I'm %d\n", me);
