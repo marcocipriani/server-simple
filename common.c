@@ -5,7 +5,7 @@ struct pkt{
     int ack;
     int flag;
     int op;
-    int length; // pkt lenght
+    int length; // data lenght
     // TODO int winsize;
     char data[DATASIZE];
-}
+};

@@ -26,20 +26,29 @@ fprintf(stdout, "[Server] Ready to accept on port %d\n", SERVER_PORT);
 }
 
 int waitforop(){
-    char *cmdreq;
-    cmdreq = malloc(BUFSIZE * sizeof(char));
+    struct pkt *cpacket;
+    char *status = "denied";
 
+    cpacket = (struct pkt *)malloc(sizeof(struct pkt));
     memset((void *)&cliaddr, 0, sizeof(cliaddr));
     len = sizeof(cliaddr);
-    recvfrom(sockd, cmdreq, BUFSIZE, 0, (struct sockaddr *)&cliaddr, &len);
+    recvfrom(sockd, cpacket, BUFSIZE, 0, (struct sockaddr *)&cliaddr, &len);
 
-    char *ok = "ok";
-    check( sendto(sockd, (char *)ok, strlen(ok), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server reply error");
-printf("[Server] Operation %s from client #%d %s\n", cmdreq, cliaddr.sin_port, ok);
+printf("[Server] Received [seq:%d][ack:%d][flag:%d][op:%d][length:%d][data:%s]\n",
+        cpacket->seq, cpacket->ack, cpacket->flag, cpacket->op, cpacket->length, cpacket->data);
 
-    if(strcmp(cmdreq, "list") == 0){ return 1; }
-    if(strcmp(cmdreq, "get") == 0){ return 2; }
-    if(strcmp(cmdreq, "put") == 0){ return 3; }
+if(cpacket->op == 1){ status = "accepted"; } // other ops are not implemented yet
+    check( sendto(sockd, (char *)status, strlen(status), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server reply error");
+printf("[Server] Operation %d %s from client #%d\n\n", cpacket->op, status, cliaddr.sin_port);
+
+    switch (cpacket->op) {
+        case 1:
+            return 1;
+        case 2:
+            return 2;
+        case 3:
+            return 3;
+    }
 
     return -1;
 }

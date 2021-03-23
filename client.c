@@ -5,14 +5,14 @@
 
 int me;
 int sockd;
+int seqnum;
 struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
 
 void setsock(){
     check( (sockd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) ), "Error creating the datagram socket");
-    //memset((void *)&cliaddr, 0, sizeof(cliaddr));
-    cliaddr = (struct sockaddr *)malloc(sizeof(cliaddr));
-    socklen_t clen;
+    memset((void *)&cliaddr, 0, sizeof(cliaddr));
+    socklen_t clen = sizeof(cliaddr);
     check( (getsockname(sockd, (struct sockaddr *)&cliaddr, &clen) ), "Error getting sock name");
     me = ntohs(cliaddr.sin_port);
 printf("I'm %d\n", me);
@@ -28,28 +28,34 @@ printf("I'm %d\n", me);
 printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
 }
 
+struct pkt *makepkt(int seq, int ack, int flag, int op, void *data){
+    struct pkt *packet;
+
+    packet = (struct pkt *)malloc(sizeof(struct pkt));
+    packet->seq = seq;
+    packet->ack = ack;
+    packet->flag = flag;
+    packet->op = op;
+    packet->length = strlen( (char *)data);
+    memcpy(packet->data, data, sizeof(data));
+
+    return packet;
+}
+
 void setop(int cmd){
     int n;
     char *rcvbuf;
-    char *oper;
+    struct pkt *cpacket;
 
-    switch (cmd) {
-        case 1:
-            oper = "list";
-            break;
-        case 2:
-            oper = "get";
-            break;
-        case 3:
-            oper = "put";
-            break;
-    }
+    seqnum++;
+    cpacket = makepkt(seqnum, 1/*ack*/, 1/*flag*/, cmd, "./");
 
-    check( (sendto(sockd, (char *)oper, sizeof(oper), 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) ), "Error setop" );
+printf("[Client #%d] Sending [seq:%d][ack:%d][flag:%d][op:%d][length:%d][data:%s]\n", me, cpacket->seq, cpacket->ack, cpacket->flag, cpacket->op, cpacket->length, cpacket->data);
+    check(sendto(sockd, (struct pkt *)cpacket, cpacket->length + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "Error setop");
 
     rcvbuf = malloc(BUFSIZE * sizeof(char));
     n = recvfrom(sockd, rcvbuf, BUFSIZE, 0, (struct sockaddr *)&servaddr, &len);
-printf("Server said: %s\n", rcvbuf);
+printf("[Server] Operation %s\n", rcvbuf);
 }
 
 void list(){
@@ -70,6 +76,7 @@ int main(int argc, char const *argv[]) {
     int op;
 
     me = getpid();
+    seqnum = 0;
 
     /* Usage */
     if(argc > 2){

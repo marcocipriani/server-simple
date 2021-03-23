@@ -1,5 +1,6 @@
 #define SERVER_PORT 5193
 #define SERVER_ADDR "127.0.0.1"
 #define BUFSIZE 1024
-#define PKTSIZE 1008
+#define HEADERSIZE 5*sizeof(int)
+#define DATASIZE 1008
 #define BACKLOG 10
