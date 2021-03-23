@@ -2,6 +2,7 @@
 #define SERVER_PORT 5193
 #define SERVER_ADDR "127.0.0.1"
 #define BACKLOG 10
+#define DEFAULT_PATH "~"
 
 // Packet settings
 #define BUFSIZE 1024

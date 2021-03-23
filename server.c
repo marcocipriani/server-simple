@@ -67,15 +67,18 @@ void list(char** res, const char* path){
 int main(int argc, char const* argv[]) {
     int op;
 
-    const char *path;
+    char *path = DEFAULT_PATH;
     char *res = malloc(BUFSIZE * sizeof(char));
     char **resptr = &res;
 
-    if(argc<2){
-        fprintf(stderr, "[Usage]: %s <path>\n", argv[0]);
-        exit(EXIT_FAILURE);
+    /* Usage */
+    if(argc > 2){
+        fprintf(stderr, "Path from argv[1] set, extra parameters are discarded. [Usage]: %s [<path>]\n", argv[0]);
     }
-    path = argv[1];
+
+    if(argc==2){
+        path = (char *)argv[1];
+    }
 
     setsock();
 
