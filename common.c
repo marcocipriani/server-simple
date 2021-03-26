@@ -6,7 +6,7 @@ struct pkt{
     int seq;
     int ack;
     int pktleft; // previously status // synop-put:totalpackets cargo:transfernumber
-    int datasize;
+    int size;
     char data[DATASIZE]; // synop: arg, ack:operationstatus (0 ok 1 denied 2 trylater) empty for ack
 };
 
@@ -15,15 +15,15 @@ struct elab{
     struct pkt clipacket;
 };
 
-struct pkt *makepkt(int seq, int ack, int flag, int op, void *data){
+struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
     struct pkt *packet;
 
     packet = (struct pkt *)malloc(sizeof(struct pkt));
     packet->op = op;
     packet->seq = seq;
     packet->ack = ack;
-    packet->status = status;
-    packet->datasize = strlen( (char *)data); // or sizeof?
+    packet->pktleft = pktleft;
+    packet->size = strlen((char *)data); // or sizeof?
     memcpy(packet->data, data, sizeof(data));
 
     return packet;
