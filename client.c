@@ -31,12 +31,18 @@ printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT
 void setop(int cmd){
     int n;
     char *rcvbuf;
-    struct pkt *cpacket;
+    //struct pkt *cpacket;
+    struct synop *cpacket;
 
     seqnum++;
-    cpacket = makepkt(seqnum, 1/*ack*/, 1/*flag*/, cmd, "./");
+    cpacket = malloc(sizeof(struct synop));
+    //cpacket = makepkt(seqnum, 1/*ack*/, 1/*flag*/, cmd, "./");
+    cpacket->flag = 1;
+    cpacket->seq = seqnum;
+    cpacket->op = cmd;
 
-printf("[Client #%d] Sending [seq:%d][ack:%d][flag:%d][op:%d][length:%d][data:%s]\n", me, cpacket->seq, cpacket->ack, cpacket->flag, cpacket->op, cpacket->length, cpacket->data);
+//printf("[Client #%d] Sending [seq:%d][ack:%d][flag:%d][op:%d][length:%d][data:%s]\n", me, cpacket->seq, cpacket->ack, cpacket->flag, cpacket->op, cpacket->length, cpacket->data);
+printf("[Client #%d] Sending [flag:%d][seq:%d][op:%d][size:%d][length:%d][data:%s]\n", me, cpacket->flag, cpacket->seq, cpacket->op, cpacket->size, cpacket->length, (char *)cpacket->data);
     check(sendto(sockd, (struct pkt *)cpacket, cpacket->length + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "Error setop");
 
     rcvbuf = malloc(BUFSIZE * sizeof(char));

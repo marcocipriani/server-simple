@@ -1,0 +1,116 @@
+SCENARIO 2 LIST
+client:
+    pkt.op = synop-list
+        .status = NULL
+        .size = sizeof(path)
+        .data = path
+    sendto(pkt, serveraddr)
+    rcvfrom(ack)
+    if ack.status == 0
+
+        send ack
+
+        while (pktleft > 0) rcvfrom(pkt, listbuffer)
+        write listbuffer on filelist
+    else exit with ack.data // status
+
+server:
+    recvfrom(clipkt, cliaddr)
+    create struct elab with clipkt and cliaddr
+    create_thread(child, elab)
+
+    child:
+        makesocket
+        if isPermitted(){
+            filelist = list(pkt.data) // list(path)
+            ack.op = 1
+                .ack = elab.pkt.seq
+                .pktleft = sizeof(filelist)
+            sendto(ack, elab.cliaddr, status)
+
+            rcvfrom ack
+            if ack == 0
+                // now send list
+                send cargo packet with list
+        } else send ack negative
+
+---
+
+SCENARIO 3 GET
+client:
+    pkt.op = 3 synop-get
+        .pktleft = NULL
+        .datasize = sizeof(path)
+        .data = path
+    makesocket
+    sendto(pkt, serveraddr)
+    rcvfrom(ack)
+    if ack == 0
+
+        send ack
+
+        int transfernumber = ack.pktleft
+        malloc
+        while pktleft > 0 rcvfrom(cargo)
+    else exit
+
+server:
+    recvfrom(clipkt, cliaddr)
+    create struct elab with clipkt and cliaddr
+    create_thread(child, elab)
+
+    child:
+    makesocket
+    if isPermitted(){
+        calculate size of file
+        ack.op = 1
+            .ack = elab.pkt.seq
+            .pktleft = total size of file / DATASIZE (+1 if % != 0)
+            .data = status ok
+        sendto(ack, elab.cliaddr)
+
+        rcvfrom ack
+
+        // now send file
+        send cargo packet with file
+    } else send ack negative
+
+---
+
+SCENARIO 4 PUT
+client:
+    calculate size of file
+    pkt.op = 4 synop-put
+        .pktleft = sizeof(file)
+        .datasize = sizeof(data)
+        .data = file
+    makesocket
+    sendto(pkt, serveraddr)
+    rcvfrom(ack)
+    if ack == 0
+
+        send ack
+
+        send file
+    else exit
+
+server:
+    recvfrom(clipkt, cliaddr)
+    create struct elab with clipkt and cliaddr
+    create_thread(child, elab)
+
+    child:
+    makesocket
+    if isPermitted(){
+        ack.op = 1
+            .ack = elab.pkt.seq
+            .pktleft = NULL
+            .data = status ok
+        sendto(ack, elab.cliaddr)
+
+        rcvfrom ack
+
+        int totalfilelength = elab.pkt.pktleft
+        malloc
+        rcvfrom cargo packet with file
+    } else send ack negative
