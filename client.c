@@ -39,7 +39,7 @@ printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][
 
 printf("[Client #%d] Waiting patiently for ack...\n", me);
     ack = (struct pkt *)malloc(sizeof(struct pkt *));
-    ret = recvfrom(sockd, ack, BUFSIZE, 0, (struct sockaddr *)&servaddr, &len);
+    ret = recvfrom(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len);
     check(ret, "Nothing received from server");
 printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
 
@@ -51,9 +51,9 @@ printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d
 
 void list(){
     int n;
-    char buffer[BUFSIZE + 1]; // 1024 + \0
+    char buffer[DATASIZE]; // 1024 + \0
 
-    n = recvfrom(sockd, buffer, BUFSIZE, 0, (struct sockaddr *)&servaddr, &len);
+    n = recvfrom(sockd, buffer, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
     if(n > 0){
         printf("Available files on server:\n");
             buffer[n] = '\0';

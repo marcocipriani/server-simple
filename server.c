@@ -32,14 +32,14 @@ printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%
 }
 
 void list(char** res, const char* path){
-    char command[BUFSIZE];
+    char command[DATASIZE];
     FILE* file;
 
     sprintf(command, "ls %s | cat > list.txt", path);
     system(command);
 
     file = fopen("list.txt", "r");
-    fread(*res, BUFSIZE, 1, file);
+    fread(*res, DATASIZE, 1, file);
 }
 
 int main(int argc, char const* argv[]) {
@@ -60,7 +60,7 @@ printf("[Server] Root folder: %s\n", spath);
     len = sizeof(cliaddr);
 
     // TMP for testing list
-    char *res = malloc(BUFSIZE * sizeof(char));
+    char *res = malloc((DATASIZE-1) * sizeof(char)); // client has to put \0 at the end
     char **resptr = &res;
     // TMP for testing ack status
     char *status = "ok";
