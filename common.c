@@ -1,25 +1,29 @@
-#include "headers.h" // TODO everything needed?
+#include "headers.h"
 #include "config.h"
 
 struct pkt{
+    int op; // 0 synop-abort, 1 synop-list, 2 synop-get, 3 synop-put, 4 ack, 5 cargo
     int seq;
     int ack;
-    int flag;
-    int op;
-    int length; // data lenght
-    // TODO int winsize;
-    char data[DATASIZE];
+    int pktleft; // previously status // synop-put:totalpackets cargo:transfernumber ack-list:totalpackets ack-get:totalpackets ack-put:0
+    int size;
+    char data[DATASIZE]; // synop: arg, ack:operationstatus (0 ok 1 denied 2 trylater) empty for ack
 };
 
-struct pkt *makepkt(int seq, int ack, int flag, int op, void *data){
+struct elab{
+    struct sockaddr_in cliaddr;
+    struct pkt clipacket;
+};
+
+struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
     struct pkt *packet;
 
     packet = (struct pkt *)malloc(sizeof(struct pkt));
+    packet->op = op;
     packet->seq = seq;
     packet->ack = ack;
-    packet->flag = flag;
-    packet->op = op;
-    packet->length = strlen( (char *)data);
+    packet->pktleft = pktleft;
+    packet->size = strlen((char *)data); // or sizeof?
     memcpy(packet->data, data, sizeof(data));
 
     return packet;

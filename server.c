@@ -3,12 +3,10 @@
 #include "common.c"
 
 int sockd;
+int nextseqnum;
 char *msg;
 struct sockaddr_in cliaddr;
 socklen_t len;
-
-// int flowcount;
-// TODO updatecount(){ ...critic zone... }
 
 void setsock(){
     struct sockaddr_in servaddr;
@@ -21,35 +19,17 @@ void setsock(){
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
     check((bind(sockd, (struct sockaddr *)&servaddr, sizeof(servaddr))),"[Server] Error in bind");
 
-fprintf(stdout, "[Server] Ready to accept on port %d\n", SERVER_PORT);
+fprintf(stdout, "[Server] Ready to accept on port %d\n\n", SERVER_PORT);
 }
 
-int waitforop(){
-    struct pkt *cpacket;
-    char *status = "denied";
+void sendack(int cliseq, int pktleft, char *status){
+    struct pkt *ack;
 
-    cpacket = (struct pkt *)malloc(sizeof(struct pkt));
-    memset((void *)&cliaddr, 0, sizeof(cliaddr));
-    len = sizeof(cliaddr);
-    recvfrom(sockd, cpacket, BUFSIZE, 0, (struct sockaddr *)&cliaddr, &len);
+    nextseqnum++;
+    ack = makepkt(4, nextseqnum, cliseq, pktleft, status);
 
-printf("[Server] Received [seq:%d][ack:%d][flag:%d][op:%d][length:%d][data:%s]\n",
-        cpacket->seq, cpacket->ack, cpacket->flag, cpacket->op, cpacket->length, cpacket->data);
-
-if(cpacket->op == 1){ status = "accepted"; } // other ops are not implemented yet
-    check( sendto(sockd, (char *)status, strlen(status), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server reply error");
-printf("[Server] Operation %d %s from client #%d\n\n", cpacket->op, status, cliaddr.sin_port);
-
-    switch (cpacket->op) {
-        case 1:
-            return 1;
-        case 2:
-            return 2;
-        case 3:
-            return 3;
-    }
-
-    return -1;
+    check( sendto(sockd, ack, HEADERSIZE+strlen(status), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "[Server] Error in sendack");
+printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
 }
 
 void list(char** res, const char* path){
@@ -64,39 +44,59 @@ void list(char** res, const char* path){
 }
 
 int main(int argc, char const* argv[]) {
-    int op;
-
-    char *path = DEFAULT_PATH;
-    char *res = malloc(BUFSIZE * sizeof(char));
-    char **resptr = &res;
+    char *spath = DEFAULT_PATH; // root folder for server
+    struct pkt *cpacket;
 
     /* Usage */
     if(argc > 2){
         fprintf(stderr, "Path from argv[1] set, extra parameters are discarded. [Usage]: %s [<path>]\n", argv[0]);
     }
 
-    if(argc==2){
-        path = (char *)argv[1];
-    }
-
+    /* Init */
+    if(argc > 1) spath = (char *)argv[1];
+printf("[Server] Root folder: %s\n", spath);
+    nextseqnum = 0;
     setsock();
+    cpacket = (struct pkt *)malloc(sizeof(struct pkt));
+    len = sizeof(cliaddr);
+
+    // TMP for testing list
+    char *res = malloc(BUFSIZE * sizeof(char));
+    char **resptr = &res;
+    // TMP for testing ack status
+    char *status = "ok";
+    int filesize = 0, listsize = 0;
 
     while(1){
+        /* Infinite receiving  */
+        memset((void *)&cliaddr, 0, sizeof(cliaddr));
+        recvfrom(sockd, cpacket, HEADERSIZE+DATASIZE, 0, (struct sockaddr *)&cliaddr, &len);
+printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", cpacket->op, cpacket->seq, cpacket->ack, cpacket->pktleft, cpacket->size, cpacket->data);
 
-        op = waitforop();
-
-        switch (op) {
+        /* Operation selection */
+        switch (cpacket->op) {
             case 1: // list
-                list(resptr, path);
+                sendack(cpacket->seq, listsize, status);
+
+                // TMP for testing list
+                list(resptr, spath);
                 check( sendto(sockd, (char *)res, strlen(res), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server sending res error");
-fprintf(stdout, "[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
+
+printf("[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
                 break;
             case 2: // get
+                 // calculate the size of the arg file
+                sendack(cpacket->seq, filesize, status);
+printf("My job here is done\n\n");
                 break;
             case 3: // put
+                sendack(cpacket->seq, 0, status);
+printf("My job here is done\n\n");
                 break;
             default:
-fprintf(stdout, "[Server] Can't handle client #%d operation...\n\n", cliaddr.sin_port);
+printf("[Server] Can't handle this packet\n\n");
+                // SEND A NACK? to protect from wrong packets
+                sendack(cpacket->seq, 0, "malformed packet");
                 break;
         }
     }
