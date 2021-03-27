@@ -64,7 +64,7 @@ void list(){
 }
 
 int main(int argc, char const *argv[]) {
-    int op;
+    int cmd;
     char *arg;
 
     /* Usage */
@@ -74,7 +74,7 @@ int main(int argc, char const *argv[]) {
 
     /* Init */
     if(argc == 2){
-        op = atoi(argv[1]);
+        cmd = atoi(argv[1]);
         goto quickstart;
     }
     arg = malloc(DATASIZE*sizeof(char));
@@ -89,11 +89,11 @@ printf("Welcome to server-simple app, client #%d\n", me);
     while (1) {
         /* Infinite parsing input */
         printf("\nAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\nChoose an operation and press ENTER: ");
-        fscanf(stdin, "%d", &op);
+        fscanf(stdin, "%d", &cmd);
 
 quickstart:
         /* Operation selection */
-        switch (op) {
+        switch (cmd) {
             case 1: // list
                 // ask for which path to list
                 if( setop(1, 0, arg) ){
@@ -120,7 +120,7 @@ printf("[Client #%d] Sending %s in the space...\n", me, arg);
                 fprintf(stdout, "Bye client #%d\n", me);
                 exit(EXIT_SUCCESS);
             default:
-                printf("No operation associated with %d\n", op);
+                printf("No operation associated with %d\n", cmd);
                 break;
         }
     }
