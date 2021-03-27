@@ -8,7 +8,9 @@ struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
 
 void setsock(){
-    check( (sockd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) ), "Error creating the datagram socket");
+    struct timeval tout;
+
+    check( (sockd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) ), "[Client] Error creating the datagram socket");
 /* TODO client id = port
     memset((void *)&cliaddr, 0, sizeof(cliaddr));
     socklen_t clen = sizeof(cliaddr);
@@ -22,6 +24,10 @@ void setsock(){
         printf("Error inet_pton\n");
         exit(EXIT_FAILURE);
     }
+
+	tout.tv_sec = CLIENT_TIMEOUT;
+	tout.tv_usec = 0;
+    check( setsockopt(sockd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "[Client] Error setting timeout socket");
 
 printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
 }
@@ -37,7 +43,7 @@ int setop(int cmd, int pktleft, void *arg){
 printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop->op, synop->seq, synop->ack, synop->pktleft, synop->size, (char *)synop->data);
     check(sendto(sockd, (struct pkt *)synop, synop->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "Error sending synop");
 
-printf("[Client #%d] Waiting patiently for ack...\n", me);
+printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
     ack = (struct pkt *)malloc(sizeof(struct pkt *));
     ret = recvfrom(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len);
     check(ret, "Nothing received from server");
