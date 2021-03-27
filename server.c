@@ -1,6 +1,5 @@
-#include "headers.h"
-#include "config.h"
 #include "common.c"
+#include "config.h"
 
 int sockd;
 int nextseqnum;
