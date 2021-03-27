@@ -2,10 +2,10 @@
 #include "config.h"
 
 struct pkt{
-    int op; // 0 cargo, 1 ack, 2 synop-list 3 synop-get 4 synop-put 5 synop-abort
+    int op; // 0 synop-abort, 1 synop-list, 2 synop-get, 3 synop-put, 4 ack, 5 cargo
     int seq;
     int ack;
-    int pktleft; // previously status // synop-put:totalpackets cargo:transfernumber
+    int pktleft; // previously status // synop-put:totalpackets cargo:transfernumber ack-list:totalpackets ack-get:totalpackets ack-put:0
     int size;
     char data[DATASIZE]; // synop: arg, ack:operationstatus (0 ok 1 denied 2 trylater) empty for ack
 };
