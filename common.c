@@ -50,3 +50,11 @@ int check(int exp, const char *msg){
     }
     return exp;
 }
+void* check_mem(void *mem, const char *msg){
+    if(mem == NULL){
+        perror(msg);
+        fprintf(stderr, "Error code %d\n", errno);
+        exit(EXIT_FAILURE);
+    }
+    return mem;
+}

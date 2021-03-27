@@ -10,24 +10,21 @@ socklen_t len;
 void setsock(){
     struct timeval tout;
 
-    check( (sockd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) ), "[Client] Error creating the datagram socket");
+    sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
 /* TODO client id = port
     memset((void *)&cliaddr, 0, sizeof(cliaddr));
     socklen_t clen = sizeof(cliaddr);
     check( (getsockname(sockd, (struct sockaddr *)&cliaddr, &clen) ), "Error getting sock name");
     me = ntohs(cliaddr.sin_port);
 */
-    memset((void *)&servaddr, 0, sizeof(servaddr));
+    check_mem(memset((void *)&servaddr, 0, sizeof(servaddr)), "setsock:memset");
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(SERVER_PORT);
-    if( (inet_pton(AF_INET, SERVER_ADDR, &servaddr.sin_addr)) <= 0){
-        printf("Error inet_pton\n");
-        exit(EXIT_FAILURE);
-    }
+    check(inet_pton(AF_INET, SERVER_ADDR, &servaddr.sin_addr), "setsock:inet_pton");
 
 	tout.tv_sec = CLIENT_TIMEOUT;
 	tout.tv_usec = 0;
-    check( setsockopt(sockd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "[Client] Error setting timeout socket");
+    check(setsockopt(sockd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "setsock:setsockopt");
 
 printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
 }
@@ -38,15 +35,14 @@ int setop(int cmd, int pktleft, void *arg){
     struct pkt *synop, *ack;
 
     nextseqnum++;
-    synop = makepkt(cmd, nextseqnum, 0, pktleft, arg);
+    synop = (struct pkt *)check_mem(makepkt(cmd, nextseqnum, 0, pktleft, arg), "setop:makepkt");
 
 printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop->op, synop->seq, synop->ack, synop->pktleft, synop->size, (char *)synop->data);
-    check(sendto(sockd, (struct pkt *)synop, synop->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "Error sending synop");
+    check(sendto(sockd, (struct pkt *)synop, synop->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setop:sendto");
 
 printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
-    ack = (struct pkt *)malloc(sizeof(struct pkt *));
-    ret = recvfrom(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len);
-    check(ret, "Nothing received from server");
+    ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");
+    check(recvfrom(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
 printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
 
     if(strcmp(ack->data, "ok")==0){
@@ -83,7 +79,7 @@ int main(int argc, char const *argv[]) {
         cmd = atoi(argv[1]);
         goto quickstart;
     }
-    arg = malloc(DATASIZE*sizeof(char));
+    arg = (char *)check_mem(malloc(DATASIZE*sizeof(char)), "main:malloc");
     me = getpid();
 printf("Welcome to server-simple app, client #%d\n", me);
     setsock();

@@ -10,13 +10,13 @@ socklen_t len;
 void setsock(){
     struct sockaddr_in servaddr;
 
-    check((sockd = socket(AF_INET, SOCK_DGRAM, 0)), "[Server] Error in socket");
+    check(sockd = socket(AF_INET, SOCK_DGRAM, 0), "setsock:socket");
 
-    memset((void *)&servaddr, 0, sizeof(servaddr));
+    check_mem(memset((void *)&servaddr, 0, sizeof(servaddr)), "setsock:memset");
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(SERVER_PORT);
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    check((bind(sockd, (struct sockaddr *)&servaddr, sizeof(servaddr))),"[Server] Error in bind");
+    check(bind(sockd, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setsock:bind");
 
 fprintf(stdout, "[Server] Ready to accept on port %d\n\n", SERVER_PORT);
 }
@@ -25,9 +25,9 @@ void sendack(int cliseq, int pktleft, char *status){
     struct pkt *ack;
 
     nextseqnum++;
-    ack = makepkt(4, nextseqnum, cliseq, pktleft, status);
+    ack = (struct pkt *)check_mem(makepkt(4, nextseqnum, cliseq, pktleft, status), "sendack:makepkt");
 
-    check( sendto(sockd, ack, HEADERSIZE+strlen(status), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "[Server] Error in sendack");
+    check(sendto(sockd, ack, HEADERSIZE+strlen(status), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "sendack:sendto");
 printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
 }
 
@@ -56,7 +56,7 @@ int main(int argc, char const* argv[]) {
 printf("[Server] Root folder: %s\n", spath);
     nextseqnum = 0;
     setsock();
-    cpacket = (struct pkt *)malloc(sizeof(struct pkt));
+    cpacket = (struct pkt *)check_mem(malloc(sizeof(struct pkt)), "main:malloc:cpacket");
     len = sizeof(cliaddr);
 
     // TMP for testing list
@@ -68,8 +68,8 @@ printf("[Server] Root folder: %s\n", spath);
 
     while(1){
         /* Infinite receiving  */
-        memset((void *)&cliaddr, 0, sizeof(cliaddr));
-        recvfrom(sockd, cpacket, HEADERSIZE+DATASIZE, 0, (struct sockaddr *)&cliaddr, &len);
+        check_mem(memset((void *)&cliaddr, 0, sizeof(cliaddr)), "main:memset");
+        check(recvfrom(sockd, cpacket, HEADERSIZE+DATASIZE, 0, (struct sockaddr *)&cliaddr, &len), "main:rcvfrom");
 printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", cpacket->op, cpacket->seq, cpacket->ack, cpacket->pktleft, cpacket->size, cpacket->data);
 
         /* Operation selection */
@@ -79,7 +79,7 @@ printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\
 
                 // TMP for testing list
                 list(resptr, spath);
-                check( sendto(sockd, (char *)res, strlen(res), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "Server sending res error");
+                check(sendto(sockd, (char *)res, strlen(res), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "main:sendto");
 
 printf("[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
                 break;
