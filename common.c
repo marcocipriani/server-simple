@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <ctype.h>
 
 #include "config.h"
 
@@ -49,4 +50,12 @@ int check(int exp, const char *msg){
         exit(EXIT_FAILURE);
     }
     return exp;
+}
+void* check_mem(void *mem, const char *msg){
+    if(mem == NULL){
+        perror(msg);
+        fprintf(stderr, "Error code %d\n", errno);
+        exit(EXIT_FAILURE);
+    }
+    return mem;
 }
