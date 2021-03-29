@@ -42,6 +42,21 @@ struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
     return packet;
 }
 
+int calculate_numpkts(char *pathname){
+    struct stat finfo;
+    int numpkts = -1;
+
+    finfo = (struct stat)malloc(sizeof(struct stat));
+
+    if( stat(pathname, &finfo) == 0){
+        numpkts = finfo.st_size / (DATASIZE);
+        if((finfo.st_size % (DATASIZE)) != 0 || numpkts == 0) ++numpkts;
+    }
+printf("numpkts: %d\n", numpkts);
+
+    return numpkts;
+}
+
 int check(int exp, const char *msg){
     if(exp < 0){
         perror(msg);
