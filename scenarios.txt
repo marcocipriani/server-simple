@@ -1,12 +1,13 @@
 SCENARIO 2 LIST
 client:
     pkt.op = synop-list
-        .status = NULL
+        .pktleft = NULL
         .size = sizeof(path)
         .data = path
     sendto(pkt, serveraddr)
     rcvfrom(ack)
-    if ack.status == 0
+
+    if ack.data == ok
 
         send ack
 

@@ -54,45 +54,34 @@ printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d
 // void thread_job_s(int fd,char *cmd,char *fname,char *dt,struct sockaddr_in *servaddr,socklen_t len)     funzione J
 
 
-void list(int cmd){
+void list(){
     int n;
-    int nextseqnum;
+    //int nextseqnum;
     char buffer[DATASIZE]; // 1024 + \0
     char dirname[MAXLINE] = {"/home/user/Scrivania/"};  /*Nome della cartella locale*/
     int fd;
 
-    struct pkt *synop-list;
     struct pkt *ack;
     struct pkt *pkt;
 
+    //synop-list
+    setop(1, 0, arg);
+    printf("[Client #%d] Looking for list of default folder...\n", me);
+
     nextseqnum++;
-    // creazione di paccketto di synop_list
-    synop_list = (struct pkt *)check_mem(makepkt(cmd, nextseqnum, 0, NULL, arg), "setop-list:makepkt");
-    printf("[Client #%d] Sending synop_list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop_list->op, synop_list->seq, synop_list->ack, synop_list->pktleft, synop_list->size, (char *)synop_list->data);
-    check(sendto(sockd,synop_list, synop_list->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "sendto");
-
-    // attesa ack
-    printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
-    ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");
-    check(recvfrom(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)), "recvfrom");
-    printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
-
-    // attesa pkt
-    printf("[Client #%d] Waiting patiently for pkt in max %d seconds...\n", me, CLIENT_TIMEOUT);
-    pkt = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");  // malloc struct pkt
-    check(recvfrom(sockd, pkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)), "recvfrom");
-    printf("[Client #%d] Received pkt from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
-
 
         if(strcmp(pkt->data, "ok")==0){
+
+          //funzione controllo spazio disponibile
+
           // invio ack
           printf("[Client #%d] Sending ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
           ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");
           check(sendto(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)), "sendto");
+
           //ricezione pkt
           while(pkt->pktleft > 0){
             check(rcvfrom(sockd, pkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr,  sizeof(servaddr)), "rcvfrom");
-            // non si deve riunire il file?
           }
           //write listbuffer on filelist
 
@@ -103,7 +92,7 @@ void list(int cmd){
             if(fd == -1)
               exit_on_error("error client open filelist");
 
-            //thread_job_r(sockfd,fd,"list",string,dirname);  // funzione Jer
+            //funzione scrivi su file la list
 
 
         }else{ // else other statuses
@@ -161,10 +150,8 @@ quickstart:
         switch (cmd) {
             case 1: // list
                 // ask for which path to list
-                if( setop(1, 0, arg) ){
-printf("[Client #%d] Looking for list of default folder...\n", me);
-                }
-                list(cmd);
+
+                list();
                 break;
             case 2: // get
                 printf("Type filename to get and press ENTER: ");

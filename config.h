@@ -11,6 +11,6 @@
 #define CLIENT_TIMEOUT 5
 
 // Packet settings
-#define MAXTRANSUNIT 1500
+#define MAXTRANSUNIT 1492
 #define HEADERSIZE 5*sizeof(int)
 #define DATASIZE MAXTRANSUNIT-HEADERSIZE
