@@ -43,6 +43,19 @@ struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
     return packet;
 }
 
+int calculate_numpkts(char *pathname){
+    struct stat finfo;
+    int numpkts = -1;
+
+    if( stat(pathname, &finfo) == 0){
+        numpkts = finfo.st_size / (DATASIZE);
+        if((finfo.st_size % (DATASIZE)) != 0 || numpkts == 0) {
+        ++numpkts;}
+    } else printf("File %s not found, please check filename and retry \n", pathname);
+
+    return numpkts;
+}
+
 int check(int exp, const char *msg){
     if(exp < 0){
         perror(msg);
@@ -51,6 +64,16 @@ int check(int exp, const char *msg){
     }
     return exp;
 }
+
+int check_mutex(int exp, const char *msg){
+    if(exp != 0){
+        perror(msg);
+        fprintf(stderr, "Error code %d\n", errno);
+        exit(EXIT_FAILURE);
+    }
+    return exp;
+}
+
 void* check_mem(void *mem, const char *msg){
     if(mem == NULL){
         perror(msg);
