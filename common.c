@@ -14,7 +14,7 @@
 #include <ctype.h>
 
 #include "config.h"
-// giaco modified
+
 struct pkt{
     int op; // 0 synop-abort, 1 synop-list, 2 synop-get, 3 synop-put, 4 ack, 5 cargo
     int seq;
@@ -54,6 +54,16 @@ int calculate_numpkts(char *pathname){
     } else printf("File %s not found, please check filename and retry \n", pathname);
 
     return numpkts;
+}
+
+void sendack(int idsock, int cliseq, int pktleft, char *status){ //aggiunto idsock per specificare quale socket invia l'ack
+    struct pkt *ack;
+
+    nextseqnum++;
+    ack = (struct pkt *)check_mem(makepkt(4, nextseqnum, cliseq, pktleft, status), "sendack:makepkt");
+
+    check(sendto(idsock, ack, HEADERSIZE+strlen(status), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "sendack:sendto");
+printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
 }
 
 int check(int exp, const char *msg){
