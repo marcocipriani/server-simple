@@ -1,6 +1,7 @@
 #include "config.h"
 #include "common.c"
 
+//commit prova
 int me;
 int sockd, sockid; //aggiunta sockput per la put
 int nextseqnum;
@@ -23,7 +24,7 @@ void setsock(int sockid){ //futuri cambiamenti +numport
     memset((void *)&cliaddr, 0, sizeof(cliaddr));
     socklen_t clen = sizeof(cliaddr);
     check( (getsockname(sockd, (struct sockaddr *)&cliaddr, &clen) ), "Error getting sock name");
-    me = ntohs(cliaddr.sin_port); 
+    me = ntohs(cliaddr.sin_port);
 */
     check_mem(memset((void *)&servaddr, 0, sizeof(servaddr)), "setsock:memset");
     servaddr.sin_family = AF_INET;
@@ -80,7 +81,7 @@ int put(int iseq, int npkt, void *pathname) { //rinominare in accordo con jack
     int fd;
     int pktremain,pktosend;
     struct pkt *synop, *ack, *cargo;
-	
+
 	setsock(sockd);
 	if (setop(3, iseq, npkt, pathname)){  //else goto input
 		iseq++;
@@ -95,8 +96,8 @@ transfer:
 		if(pktremain <= 0 ){														//num pkt da inviare entra nella finestra, non ho pkt rimanenti
 			wsize = wsize-npkt;														//aggiorno wsize
 			check_mutex(pthread_mutex_unlock(&wsizemutex),"put:unlockmutex1");		//rilascio wsize
-			//mainthput(fd,iseq,npkt);	
-			return 1;		
+			//mainthput(fd,iseq,npkt);
+			return 1;
 		} else {  																	//num pkt da inviare nn entra nella finestra, avrò pkt rimasti
 			pktosend = wsize;														//num pacchetti che posso inviare
 			wsize = wsize-(npkt-pktremain);											//aggiorno wsize
@@ -111,12 +112,12 @@ transfer:
 
 /*int mainthput(int fd, int seq, int npkt) { FUNZIONE TRASFERIMENTO FILE
 	return 1;
-	
+
 }   */
 
 
 int main(int argc, char const *argv[]) {
-    
+
     int cmd;
     char *arg;
 	int totpkt;
@@ -137,17 +138,17 @@ int main(int argc, char const *argv[]) {
     me = getpid();
 printf("Welcome to server-simple app, client #%d\n", me);
     setsock(sockd);
-    seq = 1+rand()%99; //prendo un numero di seq iniziale random compreso tra 1 e 99 
+    seq = 1+rand()%99; //prendo un numero di seq iniziale random compreso tra 1 e 99
     nextseqnum = 0;
 
 	//inizializzo semaforo per la gestione di wsize
 	check_mutex(pthread_mutex_init(&wsizemutex,NULL), "main:mutex_init");
 
 
-    while (1) {  
+    while (1) {
         /* Infinite parsing input */
         printf("\nAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\nChoose an operation and press ENTER: ");
-        
+
         fscanf(stdin, "%d", &cmd);
         //fflush(stdin);
 
@@ -168,11 +169,11 @@ printf("[Client #%d] Looking for list of default folder...\n", me);
 printf("[Client #%d] Waiting for %s...\n", me, arg);
                 }
                 break;
-put:                
+put:
             case 3: // put
                 printf("Type filename to put and press ENTER: ");
                 fscanf(stdin, "%s", arg);  //salvo il pathname in arg
-				//working on parsing file (path and size) 
+				//working on parsing file (path and size)
 				totpkt = calculate_numpkts(arg);
 				if (totpkt == -1) { goto put;
 				}
@@ -180,8 +181,8 @@ put:
                 if(put(seq, totpkt, arg)){ //ho dovuto creare put perchè mi serve una socket specifica per il client (sockputd)
 printf("[Client #%d] Sending file %s complete with success \n", me, arg);
                 } else {
-printf("[Client #%d]Problem with transfer file %s to server  \n", me, arg); 
-				exit(EXIT_FAILURE);              
+printf("[Client #%d]Problem with transfer file %s to server  \n", me, arg);
+				exit(EXIT_FAILURE);
                 }
                 break;
             case 0: // exit
