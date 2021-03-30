@@ -46,7 +46,8 @@ void list(char** res, const char* path){
 int main(int argc, char const* argv[]) {
     char *spath = DEFAULT_PATH; // root folder for server
     struct pkt *cpacket;
-
+    struct pkt *pktlist;
+    struct pkt *ack;
     /* Usage */
     if(argc > 2){
         fprintf(stderr, "Path from argv[1] set, extra parameters are discarded. [Usage]: %s [<path>]\n", argv[0]);
@@ -69,10 +70,10 @@ printf("[Server] Root folder: %s\n", spath);
 
     while(1){
         /* Infinite receiving  */
+
         check_mem(memset((void *)&cliaddr, 0, sizeof(cliaddr)), "main:memset");
         check(recvfrom(sockd, cpacket, HEADERSIZE+DATASIZE, 0, (struct sockaddr *)&cliaddr, &len), "main:rcvfrom");
 printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", cpacket->op, cpacket->seq, cpacket->ack, cpacket->pktleft, cpacket->size, cpacket->data);
-
         /* Operation selection */
         switch (cpacket->op) {
             case 1: // list
@@ -80,9 +81,15 @@ printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\
 
                 // TMP for testing list
                 list(resptr, spath);
-                check(sendto(sockd, (char *)res, strlen(res), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "main:sendto");
+                pktlist = makepkt(5,nextseqnum,0,1/*deve essere pacchetto residuo*/, (char *)res);
+                check(sendto(sockd, pktlist,MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "main:sendto");
 
 printf("[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
+
+                ack = malloc(sizeof(struct pkt *));
+                recvfrom (sockd,ack,MAXTRANSUNIT,0,NULL,NULL);
+                printf("[ Server ] Sendig ack");
+
                 break;
             case 2: // get
                  // calculate the size of the arg file

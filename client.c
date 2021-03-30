@@ -7,6 +7,10 @@ int nextseqnum;
 struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
 
+FILE *file;
+char *filename = "/home/fabio/Scrivania/file" ;
+int fd;
+
 void setsock(){
     struct timeval tout;
 
@@ -46,73 +50,47 @@ printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIE
 printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
 
     if(strcmp(ack->data, "ok")==0){
-        return 1;
+        return ack->pktleft;
     } // else other statuses
     return 0;
 }
 
-// void thread_job_s(int fd,char *cmd,char *fname,char *dt,struct sockaddr_in *servaddr,socklen_t len)     funzione J
-
-
 void list(){
     int n;
-    //int nextseqnum;
+
+    char * buffAvailable;
     char buffer[DATASIZE]; // 1024 + \0
-    char dirname[MAXLINE] = {"/home/user/Scrivania/"};  /*Nome della cartella locale*/
+
     int fd;
 
     struct pkt *ack;
     struct pkt *pkt;
 
     //synop-list
-    setop(1, 0, arg);
-    printf("[Client #%d] Looking for list of default folder...\n", me);
+    int totalpkt = setop(1, 0, arg);
+    printf("total pkt = %d \n", totalpkt);
 
+    buffAvailable = malloc(totalpkt*sizeof(struct pkt *) );
+
+    //allocare spazio per il packet = (...)
+    pkt = malloc(sizeof(struct pkt *));
+
+    //recvfrom totalpackets cargo (iterazione)
+    recvfrom(sockd,pkt,MAXTRANSUNIT,0,NULL, NULL);
+
+    //allocare lo spazio per l' ack = (...)
     nextseqnum++;
-
-        if(strcmp(pkt->data, "ok")==0){
-
-          //funzione controllo spazio disponibile
-
-          // invio ack
-          printf("[Client #%d] Sending ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
-          ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");
-          check(sendto(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)), "sendto");
-
-          //ricezione pkt
-          while(pkt->pktleft > 0){
-            check(rcvfrom(sockd, pkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr,  sizeof(servaddr)), "rcvfrom");
-          }
-          //write listbuffer on filelist
-
-          /* Crea il file per contenere la lista dei nomi dei file */
-            strncat(dirname,string,strlen(string));  /*Per avere il percorso completo del file da aprire*/
-
-            fd = open(dirname,O_CREAT | O_RDWR | O_TRUNC,0644);
-            if(fd == -1)
-              exit_on_error("error client open filelist");
-
-            //funzione scrivi su file la list
+    ack = makepkt(4, nextseqnum,pkt->seq, 0, NULL);  //vedi common
+    sendto(sockd,ack,MAXTRANSUNIT,0,(struct sockaddr *)&servaddr,sizeof(servaddr) );
 
 
-        }else{ // else other statuses
-          // send ack to finish
-          printf("[Client #%d] Sending ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
-          ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");
-          check(sendto(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)), "sendto");
-          return 0;
-        }
+    //creazione di un file - salvare la lista
+    file = fdopen(fd,"w+");
+    if(file == NULL){printf("errore nella fdopen \n");}
+
+    fprintf(file,"%s",pkt->data);
 
 
-
-        n = recvfrom(sockd, buffer, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
-        if(n > 0){
-            printf("Available files on server:\n");
-                buffer[n] = '\0';
-                fprintf(stdout, "%s", buffer);
-        } else {
-            printf("No available files on server\n");
-        }
 }
 
 int main(int argc, char const *argv[]) {
