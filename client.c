@@ -1,16 +1,24 @@
-#include "common.c"
 #include "config.h"
+#include "common.c"
 
 int me;
-int sockd, sockputd; //aggiunta sockput per la put
+int sockd, sockid; //aggiunta sockput per la put
 int nextseqnum;
 struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
+pthread_mutex_t wsizemutex;
+int wsize = 10;
 
-void setsock(){
+int pthread_mutex_init(pthread_mutex_t *,const pthread_mutexattr_t *);  //dichiarazioni per evitare i warning
+int pthread_mutex_lock(pthread_mutex_t *);
+int pthread_mutex_unlock(pthread_mutex_t *);
+int mainthput(int,int,int);
+
+
+void setsock(int sockid){ //futuri cambiamenti +numport
     struct timeval tout;
 
-    sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
+    sockid = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
 /* TODO client id = port
     memset((void *)&cliaddr, 0, sizeof(cliaddr));
     socklen_t clen = sizeof(cliaddr);
@@ -24,72 +32,30 @@ void setsock(){
 
 	tout.tv_sec = CLIENT_TIMEOUT;
 	tout.tv_usec = 0;
-    check(setsockopt(sockd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "setsock:setsockopt");
+    check(setsockopt(sockid,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "setsock:setsockopt");
 
 printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
 }
 
-void setputsock(){ //crea la socket sockputd specifica per la put
-	struct timeval tout;
-    
-    sockputd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsockoutd:socket");
-    tout.tv_sec = CLIENT_TIMEOUT;
-	tout.tv_usec = 0;
-    check(setsockopt(sockputd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "setsockputd:setsockopt"); 
-    
-   
-fprintf(stdout, "[Client #%d] Ready to trying for connection to server for put operation \n",me);
-}
-
-int put(int npkt, void *pathname) {
-	int ret; // for returning values
-    char *rcvbuf;
-    char *sndbuf;
-    struct pkt *synop, *ack, *cargo;
-	
-	setputsock();
-	//devo fare la bind?
-	nextseqnum++;
-	synop = (struct pkt *)check_mem(makepkt(3, nextseqnum, 0, npkt, pathname), "setopput:makepkt"); //cmd = 3 già lo so
-	
-printf("[Client #%d] Sending synopput [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, 3, synop->seq, synop->ack, synop->pktleft, synop->size, (char *)synop->data);
-
-	check(sendto(sockputd, (struct pkt *)synop, synop->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setopput:sendto");
-printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
-	//pacchetto synopput inviato mi metto in attesa dell'ack per la connessione
-	ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setopput:malloc");
-	check(recvfrom(sockputd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
-printf("[Client #%d] Received ack from server for put operation [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
-
-	if(strcmp(ack->data, "ok")==0){
-		    return 1;
-		}
-	else if(strcmp(ack->data, "fullbuf")==0) {
-		printf("[Client #%d] Server buffer is too small for allocating file \n",me);
-		}   //can add other statuses
-	return 0;
-	
-}
-
-
-int setop(int cmd, int pktleft, void *arg){
+int setop(int cmd,int seq, int pktleft, void *arg){
     int ret; // for returning values
     char *rcvbuf;
     struct pkt *synop, *ack;
 
-    nextseqnum++;
-	synop = (struct pkt *)check_mem(makepkt(cmd, nextseqnum, 0, pktleft, arg), "setop:makepkt");
+    //nextseqnum++;
+	synop = (struct pkt *)check_mem(makepkt(cmd, seq, 0, pktleft, arg), "setop:makepkt");
 
 printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop->op, synop->seq, synop->ack, synop->pktleft, synop->size, (char *)synop->data);
-    check(sendto(sockd, (struct pkt *)synop, synop->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setop:sendto");
+    check(sendto(sockid, (struct pkt *)synop, synop->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setop:sendto");
 
 printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
     ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");
-    check(recvfrom(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
+    check(recvfrom(sockid, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
 printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
 
 
     if(strcmp(ack->data, "ok")==0){
+printf("[Client #%d] Connection established \n", me);
         return 1;
     } // else other statuses
     return 0;
@@ -109,13 +75,52 @@ void list(){
     }
 }
 
+int put(int iseq, int npkt, void *pathname) { //rinominare in accordo con jack
+	int ret; // for returning values
+    int fd;
+    int pktremain,pktosend;
+    struct pkt *synop, *ack, *cargo;
+	
+	setsock(sockd);
+	if (setop(3, iseq, npkt, pathname)){  //else goto input
+		iseq++;
+		//open(file) return fd
+		fd = open((char *)pathname,O_RDONLY,00700); //DA TESTARE
+		if (fd == -1){
+			printf("[Client #%d] Problem opening file %s \n", me, pathname);
+			exit(EXIT_FAILURE);}  //da risolvere, in caso di errore dove redirectiamo il codice
+transfer:
+		check_mutex(pthread_mutex_lock(&wsizemutex),"put:lockmutex");				//prendo il controllo di wsize
+		pktremain = npkt-wsize;														//calcolo i pacchetti che mi restano
+		if(pktremain <= 0 ){														//num pkt da inviare entra nella finestra, non ho pkt rimanenti
+			wsize = wsize-npkt;														//aggiorno wsize
+			check_mutex(pthread_mutex_unlock(&wsizemutex),"put:unlockmutex1");		//rilascio wsize
+			//mainthput(fd,iseq,npkt);	
+			return 1;		
+		} else {  																	//num pkt da inviare nn entra nella finestra, avrò pkt rimasti
+			pktosend = wsize;														//num pacchetti che posso inviare
+			wsize = wsize-(npkt-pktremain);											//aggiorno wsize
+			check_mutex(pthread_mutex_unlock(&wsizemutex),"put:unlockmutex2");		//rilascio wsize
+			npkt = pktremain;														//il tot dei pkt da inviare = pkt rimasti
+			//mainthput(fd,iseq,pktosend);
+			goto transfer;
+			exit(EXIT_FAILURE);
+			}
+		}
+}
+
+/*int mainthput(int fd, int seq, int npkt) { FUNZIONE TRASFERIMENTO FILE
+	return 1;
+	
+}   */
+
+
 int main(int argc, char const *argv[]) {
     
     int cmd;
     char *arg;
-    off_t filelength;
-	int filesize;
-	int byteslastpkt;
+	int totpkt;
+	int seq;
 	struct stat filestat;
 
     /* Usage */
@@ -131,8 +136,12 @@ int main(int argc, char const *argv[]) {
     arg = (char *)check_mem(malloc(DATASIZE*sizeof(char)), "main:malloc");
     me = getpid();
 printf("Welcome to server-simple app, client #%d\n", me);
-    setsock();
+    setsock(sockd);
+    seq = 1+rand()%99; //prendo un numero di seq iniziale random compreso tra 1 e 99 
     nextseqnum = 0;
+
+	//inizializzo semaforo per la gestione di wsize
+	check_mutex(pthread_mutex_init(&wsizemutex,NULL), "main:mutex_init");
 
 
     while (1) {  
@@ -140,13 +149,14 @@ printf("Welcome to server-simple app, client #%d\n", me);
         printf("\nAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\nChoose an operation and press ENTER: ");
         
         fscanf(stdin, "%d", &cmd);
+        //fflush(stdin);
 
 quickstart:
         /* Operation selection */
         switch (cmd) {
             case 1: // list
                 // ask for which path to list
-                if( setop(1, 0, arg) ){
+                if( setop(1, seq, 0, arg) ){
 printf("[Client #%d] Looking for list of default folder...\n", me);
                 }
                 list();
@@ -154,36 +164,24 @@ printf("[Client #%d] Looking for list of default folder...\n", me);
             case 2: // get
                 printf("Type filename to get and press ENTER: ");
                 fscanf(stdin, "%s", arg);
-                if(setop(2, 0, arg)){
+                if(setop(2, seq, 0, arg)){
 printf("[Client #%d] Waiting for %s...\n", me, arg);
                 }
                 break;
+put:                
             case 3: // put
                 printf("Type filename to put and press ENTER: ");
                 fscanf(stdin, "%s", arg);  //salvo il pathname in arg
 				//working on parsing file (path and size) 
-				stat(arg, &filestat); //creo struct stat con pathname= arg e un buffer alla struttura
-				filelength = filestat.st_size;
-				if (filelength == 0) {
-printf("File not found, check for correct pathname \n");
-				exit(EXIT_FAILURE);
-				} else {
-					printf("[Client #%d] File selected is %s and its size is %d \n",me, arg, filelength);
-				//calculate number of pkt by file size
-					filesize =(int) (filelength/((off_t) DATASIZE)); 
-					if (filesize <=0) {        
-						filesize = 1;
-					}
-					else if((byteslastpkt = (int) (filelength%((off_t)DATASIZE))) != 0) { 
-							filesize++;
-							printf("[Client #%d] Last packet size will be %d bytes \n", me, byteslastpkt);
-						} else {
-							printf("File size perfectly match with pkt size! \n");
-						}
-					printf("[Client #%d] Number of packet that will be send for file %s is %d \n", me, arg, filesize); 
-					}				
-                if(put(filesize, arg)){ //ho dovuto creare put perchè mi serve una socket specifica per il client (sockputd)
-printf("[Client #%d] Sending %s in the space...\n", me, arg);
+				totpkt = calculate_numpkts(arg);
+				if (totpkt == -1) { goto put;
+				}
+				else printf("[Client #%d] File selected is %s and it has generate %d pkt to transfer \n",me, arg, totpkt);
+                if(put(seq, totpkt, arg)){ //ho dovuto creare put perchè mi serve una socket specifica per il client (sockputd)
+printf("[Client #%d] Sending file %s complete with success \n", me, arg);
+                } else {
+printf("[Client #%d]Problem with transfer file %s to server  \n", me, arg); 
+				exit(EXIT_FAILURE);              
                 }
                 break;
             case 0: // exit
