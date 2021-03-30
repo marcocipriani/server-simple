@@ -1,7 +1,7 @@
 #include "common.c"
 #include "config.h"
 
-int sockd,rcvputsockd;
+int sockd;
 int nextseqnum;
 char *msg;
 char rcvbuf[45000]; //buffer per la put
@@ -32,6 +32,29 @@ void sendack(int idsock, int cliseq, int pktleft, char *status){ //aggiunto idso
 printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
 }
 
+int freespacebuf(int totpkt){
+	size_t totpktsize;
+	int res;
+
+	totpktsize =(size_t) (totpkt*sizeof(char))*(DATASIZE*sizeof(char));
+	res = sizeof(rcvbuf)-totpktsize;
+	if (res >=0) {
+	return 1;
+	} else return 0;
+}
+
+void setrcvputsock(){ //crea la socket rcvputsockd specifica per la put
+	struct timeval tout;
+
+    rcvputsockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsockoutd:socket");
+    tout.tv_sec = SERVER_TIMEOUT;
+	tout.tv_usec = 0;
+    check(setsockopt(rcvputsockd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "setrcvputsock:setsockopt");
+
+
+fprintf(stdout, "[Server] Ready to accept connection from client for put operation \n");
+}
+
 void list(char** res, const char* path){
     char command[DATASIZE];
     FILE* file;
@@ -43,27 +66,22 @@ void list(char** res, const char* path){
     fread(*res, DATASIZE, 1, file);
 }
 
-int freespacebuf(int totpkt){
-	size_t totpktsize;
-	int res;
-	
-	totpktsize =(size_t) (totpkt*sizeof(char))*(DATASIZE*sizeof(char));
-	res = sizeof(rcvbuf)-totpktsize;
-	if (res >=0) {
-	return 1;
-	} else return 0;
-}
+int get(int ack, int numpkt, char * filename){
+//  int sockid;
+  struct pkt* ack;
+  int fd;
+  //  setsock(sockid);
+  ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "GET-server:malloc ack")
+  check(recvfrom(sockd,ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "GET-server:recvfrom ack-client");
+  if(strcmp(ack->data, "ok")==0){
+    printf("[SERVER] Connection established \n");
+    fd = open((char *)filename,O_RDONLY,00700); //apertura file da trasferire
+    if (fd == -1){
+      printf("[SERVER] Problem opening file %s \n",  filename);
+      exit(EXIT_FAILURE);}
+  } // else other statuses
+  return 0;
 
-void setrcvputsock(){ //crea la socket rcvputsockd specifica per la put
-	struct timeval tout;
-    
-    rcvputsockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsockoutd:socket");
-    tout.tv_sec = SERVER_TIMEOUT;
-	tout.tv_usec = 0;
-    check(setsockopt(rcvputsockd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "setrcvputsock:setsockopt"); 
-    
-   
-fprintf(stdout, "[Server] Ready to accept connection from client for put operation \n");
 }
 
 
@@ -71,18 +89,19 @@ int put(struct pkt *pkt, int filesize){
 	int ret; // for returning values
     char *sndbuf;
     struct pkt *cpacket;
-	
+
 	char *status = "ok";
 	cpacket = pkt;
 	setrcvputsock();
 	sendack(rcvputsockd, cpacket->seq, filesize, status);
-printf("[Server] Sending ACK for connection for put operation to client #%d...\n\n", cliaddr.sin_port);	
+printf("[Server] Sending ACK for connection for put operation to client #%d...\n\n", cliaddr.sin_port);
 }
 
 
 int main(int argc, char const* argv[]) {
     char *spath = DEFAULT_PATH; // root folder for server
     struct pkt *cpacket;
+    char *filename;
 
     /* Usage */
     if(argc > 2){
@@ -101,8 +120,8 @@ printf("[Server] Root folder: %s\n", spath);
     char *res = malloc((DATASIZE-1) * sizeof(char)); // client has to put \0 at the end
     char **resptr = &res;
     // TMP for testing ack status
-    char *status = "ok";
-    int filesize = 0, listsize = 0;
+    int filesize;
+    int listsize = 0;
 
     while(1){
         /* Infinite receiving  */
@@ -113,7 +132,7 @@ printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\
         /* Operation selection */
         switch (cpacket->op) {
             case 1: // list
-                sendack(sockd, cpacket->seq, listsize, status);
+                sendack(sockd, cpacket->seq, listsize, "ok");
 
                 // TMP for testing list
                 list(resptr, spath);
@@ -123,7 +142,19 @@ printf("[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
                 break;
             case 2: // get
                  // calculate the size of the arg file
-                sendack(sockd, cpacket->seq, filesize, status);
+                strncpy(filename,cpacket->data,sizeof(cpacket->data)); /* salvo il filename del file richiesto*/
+                filesize=calculate_numpkts(filename);
+                if (filesize == -1) {
+                  sendack(sockd, cpacket->seq, filesize, "GET:File non presente");
+        				}
+                printf("[SERVER] File selected is %s and it has generate %d pkt to transfer \n", filename, filesize);
+                sendack(sockd, cpacket->seq, filesize, "ok");
+                if(get(seq, filesize, filename)){
+                  printf("[SERVER] Sending file %s complete with success \n", filename);
+                                  } else {
+                  printf("[SERVER]Problem with transfer file %s to server  \n",filename);
+                  				exit(EXIT_FAILURE);
+                                  }
 printf("My job here is done\n\n");
                 break;
             case 3: // put
@@ -134,7 +165,7 @@ printf("My job here is done\n\n");
 					};
             	} else{
     printf("[Server] Can't handle this packet, no space for the file\n\n");
-    			sendack(sockd, cpacket->seq, 0, "fullbuf");	
+    			sendack(sockd, cpacket->seq, 0, "fullbuf");
             	}
                 break;
             default:
