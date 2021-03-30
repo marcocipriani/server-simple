@@ -14,7 +14,7 @@
 #include <ctype.h>
 
 #include "config.h"
-
+// giaco modified
 struct pkt{
     int op; // 0 synop-abort, 1 synop-list, 2 synop-get, 3 synop-put, 4 ack, 5 cargo
     int seq;
