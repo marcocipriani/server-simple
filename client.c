@@ -51,18 +51,79 @@ printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d
     return 0;
 }
 
-void list(){
-    int n;
-    char buffer[DATASIZE]; // 1024 + \0
+// void thread_job_s(int fd,char *cmd,char *fname,char *dt,struct sockaddr_in *servaddr,socklen_t len)     funzione J
 
-    n = recvfrom(sockd, buffer, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
-    if(n > 0){
-        printf("Available files on server:\n");
-            buffer[n] = '\0';
-            fprintf(stdout, "%s", buffer);
-    } else {
-        printf("No available files on server\n");
-    }
+
+void list(int cmd){
+    int n;
+    int nextseqnum;
+    char buffer[DATASIZE]; // 1024 + \0
+    char dirname[MAXLINE] = {"/home/user/Scrivania/"};  /*Nome della cartella locale*/
+    int fd;
+
+    struct pkt *synop-list;
+    struct pkt *ack;
+    struct pkt *pkt;
+
+    nextseqnum++;
+    // creazione di paccketto di synop_list
+    synop_list = (struct pkt *)check_mem(makepkt(cmd, nextseqnum, 0, NULL, arg), "setop-list:makepkt");
+    printf("[Client #%d] Sending synop_list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop_list->op, synop_list->seq, synop_list->ack, synop_list->pktleft, synop_list->size, (char *)synop_list->data);
+    check(sendto(sockd,synop_list, synop_list->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "sendto");
+
+    // attesa ack
+    printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
+    ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");
+    check(recvfrom(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)), "recvfrom");
+    printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
+
+    // attesa pkt
+    printf("[Client #%d] Waiting patiently for pkt in max %d seconds...\n", me, CLIENT_TIMEOUT);
+    pkt = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");  // malloc struct pkt
+    check(recvfrom(sockd, pkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)), "recvfrom");
+    printf("[Client #%d] Received pkt from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
+
+
+        if(strcmp(pkt->data, "ok")==0){
+          // invio ack
+          printf("[Client #%d] Sending ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
+          ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");
+          check(sendto(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)), "sendto");
+          //ricezione pkt
+          while(pkt->pktleft > 0){
+            check(rcvfrom(sockd, pkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr,  sizeof(servaddr)), "rcvfrom");
+            // non si deve riunire il file?
+          }
+          //write listbuffer on filelist
+
+          /* Crea il file per contenere la lista dei nomi dei file */
+            strncat(dirname,string,strlen(string));  /*Per avere il percorso completo del file da aprire*/
+
+            fd = open(dirname,O_CREAT | O_RDWR | O_TRUNC,0644);
+            if(fd == -1)
+              exit_on_error("error client open filelist");
+
+            //thread_job_r(sockfd,fd,"list",string,dirname);  // funzione Jer
+
+
+        }else{ // else other statuses
+          // send ack to finish
+          printf("[Client #%d] Sending ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
+          ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");
+          check(sendto(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)), "sendto");
+          return 0;
+        }
+
+
+
+        n = recvfrom(sockd, buffer, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
+        if(n > 0){
+            printf("Available files on server:\n");
+                buffer[n] = '\0';
+                fprintf(stdout, "%s", buffer);
+        } else {
+            printf("No available files on server\n");
+        }
 }
 
 int main(int argc, char const *argv[]) {
@@ -79,9 +140,11 @@ int main(int argc, char const *argv[]) {
         cmd = atoi(argv[1]);
         goto quickstart;
     }
+
     arg = (char *)check_mem(malloc(DATASIZE*sizeof(char)), "main:malloc");
     me = getpid();
 printf("Welcome to server-simple app, client #%d\n", me);
+
     setsock();
     nextseqnum = 0;
 
@@ -101,7 +164,7 @@ quickstart:
                 if( setop(1, 0, arg) ){
 printf("[Client #%d] Looking for list of default folder...\n", me);
                 }
-                list();
+                list(cmd);
                 break;
             case 2: // get
                 printf("Type filename to get and press ENTER: ");

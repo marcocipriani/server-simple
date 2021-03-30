@@ -21,6 +21,7 @@ void setsock(){
 fprintf(stdout, "[Server] Ready to accept on port %d\n\n", SERVER_PORT);
 }
 
+
 void sendack(int cliseq, int pktleft, char *status){
     struct pkt *ack;
 
