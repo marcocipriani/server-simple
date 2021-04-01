@@ -29,6 +29,13 @@ struct elab{
     struct pkt clipacket;
 };
 
+struct elab2{
+    int initialseq;   //numero sequenza iniziale per un dato file
+    int **p;          //puntatore a array di contatori (ricezione ack)
+    struct pkt *thpkt;
+
+};
+
 struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
     struct pkt *packet;
 
@@ -107,5 +114,5 @@ ssize_t readn(int fd, void *vptr, size_t n) {/* Read "n" bytes from a descriptor
        ptr += nread;
        //ALERT :if((int)nread<(int)n) break;	/* Se leggi di meno non bloccare ed esci dal ciclo*/
    }
-   return (n - nleft);         /* return >= 0 */
+   return (n - nleft);         /* return byte letti */
  }
