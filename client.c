@@ -54,14 +54,18 @@ printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d
 void list(){
     int n;
     char buffer[DATASIZE]; // 1024 + \0
+    struct pkt *listpkt = malloc(sizeof(struct pkt));
+    int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
 
-    n = recvfrom(sockd, buffer, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
+    n = recvfrom(sockd, listpkt, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
     if(n > 0){
         printf("Available files on server:\n");
-            buffer[n] = '\0';
-            fprintf(stdout, "%s", buffer);
+            //buffer[n] = '\0';
+            fprintf(stdout, "%s", listpkt->data);
+            write(fd, listpkt->data, listpkt->size);
     } else {
         printf("No available files on server\n");
+        write(fd, "No available files on server\n", 30);
     }
 }
 
@@ -113,7 +117,7 @@ printf("[Client #%d] Waiting for %s...\n", me, arg);
             case 3: // put
                 printf("Type filename to put and press ENTER: ");
                 fscanf(stdin, "%s", arg);
-                // calculate the size of the arg file
+                check(calculate_numpkts(arg), "file not found");
                 if(setop(3, filesize, arg)){
 printf("[Client #%d] Sending %s in the space...\n", me, arg);
                 }

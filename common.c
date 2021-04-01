@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include "config.h"
 
@@ -37,7 +38,7 @@ struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
     packet->ack = ack;
     packet->pktleft = pktleft;
     packet->size = strlen((char *)data); // or sizeof?
-    memcpy(packet->data, data, sizeof(data));
+    memcpy(packet->data, data, packet->size);
 
     return packet;
 }
@@ -46,7 +47,7 @@ int calculate_numpkts(char *pathname){
     struct stat finfo;
     int numpkts = -1;
 
-    finfo = (struct stat)malloc(sizeof(struct stat));
+    //finfo = (struct stat *)malloc(sizeof(struct stat));
 
     if( stat(pathname, &finfo) == 0){
         numpkts = finfo.st_size / (DATASIZE);
