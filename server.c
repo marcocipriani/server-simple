@@ -55,9 +55,18 @@ void setrcvputsock(){ //crea la socket rcvputsockd specifica per la put
 fprintf(stdout, "[Server] Ready to accept connection from client for put operation \n");
 }
 
-void *thread_sender(void *arg){/*PROBLEMA: scrivere su un contatore globale di npkt posizioni*/
-  struct pkt* cargo;
-  cargo = (struct pkt*) arg;
+void *thread_sendpkt(void *arg){/*PROBLEMA: scrivere su un contatore globale di npkt posizioni*/
+  void *status;
+	struct elab2 *cargo;
+	cargo = (struct elab2 *)arg;
+
+	printf("sono il thread # %d \n",(cargo->thpkt->seq)-(cargo->initialseq));
+	printf("valore : %d \n" ,cargo->p[(cargo->thpkt->seq)-(cargo->initialseq)]);
+
+	cargo->p[(cargo->thpkt->seq)-(cargo->initialseq)] =(int *) 8;
+
+	printf("valore : %d \n",cargo->p[(cargo->thpkt->seq)-(cargo->initialseq)]);
+	pthread_exit(status);
 
 }
 
@@ -76,11 +85,17 @@ int get(int iseq,int iack, int numpkt, char * filename){ //iseq=11,iack=31,numpk
 //  int sockid;
   struct pkt* ack;
   struct pkt *pktget; //array di pkt da inviare
+  struct elab2 **sendpkt;
   int fd;
-  int j;
+  int j,z;
   pthread_t tid;
-  //struct sender* ssender;
-  //  setsock(sockid);
+  void **status;
+	int **counter;
+  int aux;
+  void * dati;
+  int init= iseq;
+
+  //  setsock();
   ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "GET-server:malloc ack")
   check(recvfrom(sockd,ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "GET-server:recvfrom ack-client");
   if(strcmp(ack->data, "ok")==0){   /* ho ricevuto ack positivo dal client */
@@ -90,26 +105,64 @@ int get(int iseq,int iack, int numpkt, char * filename){ //iseq=11,iack=31,numpk
       printf("[SERVER] Problem opening file %s \n",  filename);
       exit(EXIT_FAILURE);
     }
+/*    if ((shm_ds = shmget(shm_key, shmsize, 0)) == -1) { /*creazione mem.condivisa*
+      printf("Errore. Impossibile reperire la memoria condivisa.\n");
+      return 1;
+    }
+    if ((shm_addr = shmat(shm_ds, NULL, 0)) == (void *) -1) { /*aggancio mem.condivisa*
+		    printf("Errore. Impossibile agganciare la memoria condivisa.\n");
+		return -1;
+  }*/
 transfer:
+    sendpkt = malloc((numpkt)*sizeof(struct elab2)); /*Alloca la memoria per thread che eseguiranno la get */
+    if(sendpkt == NULL){
+      printf("server: ERRORE malloc sendpkt del file %s",filename);
+      exit(EXIT_FAILURE);
+    }
 
-    pktget =  malloc((numpkt)*sizeof(struct pkt)); /*Alloca la memoria per thread che eseguiranno la get */
+    counter = malloc((numpkt)*sizeof(int *));
+    if(counter == NULL){
+      printf("server: errore malloc contatore ack \n");
+      exit(EXIT_FAILURE);
+    }
+    for(z=0; z<numpkt; z++){
+		  counter[z] = 0;         //inizializza a 0 il counter
+	  }
+
+    pktget = (struct pkt *)malloc(sizeof(struct pkt));  //alloco memoria per un pkt
+
+
+    /*pktget =  malloc((numpkt)*sizeof(struct pkt)); //Alloca la memoria per thread che eseguiranno la get
     if(pktget == NULL){
       printf("server: ERRORE malloc pktget del file %s",filename);
       exit(EXIT_FAILURE);
-    }
+    }*/
     for(j=0;j<numpkt;j++){
-      pktget[j].size = (int) readn(fd,pktget[j].data,DATASIZE);
-      pktget[j].op = 5;
-      pktget[j].seq = iseq;
-      pktget[j].ack = 0;
-      pktget[j].pktleft = numpkt-j;  //da rivedere in caso di reinvii
+      aux = readn(fd,dati,DATASIZE);
+      pktget = makepkt(5,iseq,0,numpkt-j,dati);
+    /*  pktget.size = (int) readn(fd,pktget.data,DATASIZE);
+      pktget.op = 5;   //cargo
+      pktget.seq = iseq;
+      pktget.ack = 0;
+      pktget.pktleft = numpkt-j;  //da rivedere in caso di reinvii
+      pktget.data = */
+
+      sendpkt[j] =(struct sendpkt_struct *) mmap(NULL,(sizeof(struct sendpkt_struct)), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS ,0,0); /*mmap sendpkt*/
+      if (sendpkt[j] == NULL){
+        printf("%s",strerror(errno));
+      }
+      sendpkt[j]->thpkt = pktget;
+	    sendpkt[j]->p = counter;
+	    sendpkt[j]->initialseq = init;
+
       iseq++;
-      if(pthread_create(&tid,NULL,thread_sender,pktget[j])!=0){
+      if(pthread_create(&tid,NULL,thread_sendpkt,(void *)sendpkt[j])!=0){
         printf("server:ERRORE pthread_create GET in main");
         exit(EXIT_FAILURE);
       }
-
-    }
+      for (int j = 0; j < numpkt; j++) {
+        pthread_join(tid,status);
+      }
     }
   } // else other statuses
   return 0; /* ho ricevuto ack negatico dal client */
