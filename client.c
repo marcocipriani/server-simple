@@ -8,8 +8,9 @@ struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
 
 FILE *file;
-char *filename = "/home/fabio/Scrivania/file" ;
+char *filename = "/home/fabio/Scrivania/progetto/server-simple/listricevuto.txt" ;
 int fd;
+
 
 void setsock(){
     struct timeval tout;
@@ -50,53 +51,59 @@ printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIE
 printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
 
     if(strcmp(ack->data, "ok")==0){
-        return ack->pktleft;
+        return ack->pktleft; // così abbiamo il residuo dei pacchetti rimanenti
     } // else other statuses
-    return 0;
+    return -1;
 }
 
-void list(){
-    int n;
+void list(int totalpackets ){
 
+    int n;
+    char * arg;
     char * buffAvailable;
     char buffer[DATASIZE]; // 1024 + \0
-
+    char buffer2[4000];
     int fd;
 
-    struct pkt *ack;
+    struct pkt *ack2;
     struct pkt *pkt;
 
     //synop-list
-    int totalpkt = setop(1, 0, arg);
-    printf("total pkt = %d \n", totalpkt);
 
-    buffAvailable = malloc(totalpkt*sizeof(struct pkt *) );
+    buffAvailable = malloc(totalpackets*sizeof(struct pkt*) );
 
     //allocare spazio per il packet = (...)
-    pkt = malloc(sizeof(struct pkt *));
+    pkt = (struct pkt*) malloc(sizeof(struct pkt*));
 
-    //recvfrom totalpackets cargo (iterazione)
+    //recvfrom totalpackets cargo in questo caso(banale) ne ricevo solo uno
+    //ma se faccio un iterazione posso ricevere più pacchetti
+
     recvfrom(sockd,pkt,MAXTRANSUNIT,0,NULL, NULL);
+    printf(" stampa pkt %s",pkt->data);
 
-    //allocare lo spazio per l' ack = (...)
-    nextseqnum++;
-    ack = makepkt(4, nextseqnum,pkt->seq, 0, NULL);  //vedi common
-    sendto(sockd,ack,MAXTRANSUNIT,0,(struct sockaddr *)&servaddr,sizeof(servaddr) );
+    //abbiamo aperto o creato un file per salvare la lista
+    fd = open(filename,O_CREAT| O_RDWR|O_TRUNC,0666);
+    if (fd == -1){printf("errore nella open \n");}
 
-
-    //creazione di un file - salvare la lista
+    //abbiamo aperto lo stream a quel file
     file = fdopen(fd,"w+");
     if(file == NULL){printf("errore nella fdopen \n");}
 
     fprintf(file,"%s",pkt->data);
 
+    //allocare lo spazio per l' ack = (...)
+    ack2 = (struct pkt*) malloc(sizeof(struct pkt*));
+
+    ack2 = check_mem(makepkt(4, nextseqnum,pkt->seq, 0, NULL),"errore makepkt ack");  //vedi common
+    printf("\n%d\n",ack2->op);
+    sendto(sockd,ack2,MAXTRANSUNIT,0,(struct sockaddr *)&servaddr,sizeof(servaddr) );
 
 }
 
 int main(int argc, char const *argv[]) {
     int cmd;
     char *arg;
-
+    int totalpkt;
     /* Usage */
     if(argc > 3){
         fprintf(stderr, "Quickstart with %s, extra parameters are discarded.\n[Usage] %s [<operation-number>]\n", argv[1], argv[0]);
@@ -129,7 +136,9 @@ quickstart:
             case 1: // list
                 // ask for which path to list
 
-                list();
+                totalpkt = setop(1, 0, arg);//perchè setop ha come ritorno un intero
+                printf("total pkt = %d \n", totalpkt);
+                list(totalpkt);
                 break;
             case 2: // get
                 printf("Type filename to get and press ENTER: ");

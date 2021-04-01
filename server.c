@@ -26,6 +26,7 @@ void sendack(int cliseq, int pktleft, char *status){
     struct pkt *ack;
 
     nextseqnum++;
+    ack = (struct pkt*) malloc(sizeof(struct pkt*));
     ack = (struct pkt *)check_mem(makepkt(4, nextseqnum, cliseq, pktleft, status), "sendack:makepkt");
 
     check(sendto(sockd, ack, HEADERSIZE+strlen(status), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "sendack:sendto");
@@ -66,7 +67,7 @@ printf("[Server] Root folder: %s\n", spath);
     char **resptr = &res;
     // TMP for testing ack status
     char *status = "ok";
-    int filesize = 0, listsize = 0;
+    int filesize = 0, listsize ;
 
     while(1){
         /* Infinite receiving  */
@@ -77,18 +78,26 @@ printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\
         /* Operation selection */
         switch (cpacket->op) {
             case 1: // list
-                sendack(cpacket->seq, listsize, status);
 
                 // TMP for testing list
                 list(resptr, spath);
-                pktlist = makepkt(5,nextseqnum,0,1/*deve essere pacchetto residuo*/, (char *)res);
-                check(sendto(sockd, pktlist,MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "main:sendto");
+                //divisione per eccesso
+                //listsize = strlen(res)/(DATASIZE); // restituisce il numero del contenuto della lista
+
+                sendack(cpacket->seq, /*listsize*/ 1, status);
+                //printf("%s",res);//funziona bene list
 
 printf("[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
+                nextseqnum++;
+                pktlist = (struct pkt *)malloc(sizeof(struct pkt ));
+                pktlist = makepkt(5,nextseqnum,0,1/*deve essere pacchetto residuo pktleft*/,(char *)res);
+                printf("seguoflusso %d , %d\n",pktlist->op,strlen(pktlist->data));
+                sendto(sockd, pktlist,MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
 
-                ack = malloc(sizeof(struct pkt *));
-                recvfrom (sockd,ack,MAXTRANSUNIT,0,NULL,NULL);
-                printf("[ Server ] Sendig ack");
+printf("[Server] Waiting patiently for ack in max %d seconds...\n", CLIENT_TIMEOUT);
+                ack = (struct pkt *)malloc(sizeof(struct pkt *));
+                recvfrom(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len);
+printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", cpacket->op, cpacket->seq, cpacket->ack, cpacket->pktleft, cpacket->size, cpacket->data);
 
                 break;
             case 2: // get

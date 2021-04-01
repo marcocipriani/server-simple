@@ -37,7 +37,7 @@ struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
     packet->ack = ack;
     packet->pktleft = pktleft;
     packet->size = strlen((char *)data); // or sizeof?
-    memcpy(packet->data, data, sizeof(data));
+    memcpy(packet->data, data, packet->size);
 
     return packet;
 }
