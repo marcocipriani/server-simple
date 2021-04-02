@@ -22,13 +22,13 @@ void setsock(){
 fprintf(stdout, "[Server] Ready to accept on port %d\n\n", SERVER_PORT);
 }
 
-void sendack(int idsock, int cliseq, int pktleft, char *status){ //aggiunto idsock per specificare quale socket invia l'ack
+void sendack(int sockd, int cliseq, int pktleft, char *status){ //aggiunto sockd per specificare quale socket invia l'ack
     struct pkt *ack;
 
     nextseqnum++;
     ack = (struct pkt *)check_mem(makepkt(4, nextseqnum, cliseq, pktleft, status), "sendack:makepkt");
 
-    check(sendto(idsock, ack, HEADERSIZE+strlen(status), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "sendack:sendto");
+    check(sendto(sockd, ack, HEADERSIZE+strlen(status), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "sendack:sendto");
 printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
 }
 
@@ -43,30 +43,71 @@ int freespacebuf(int totpkt){
 	} else return 0;
 }
 
-void setrcvputsock(){ //crea la socket rcvputsockd specifica per la put
-	struct timeval tout;
-
-    rcvputsockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsockoutd:socket");
-    tout.tv_sec = SERVER_TIMEOUT;
-	tout.tv_usec = 0;
-    check(setsockopt(rcvputsockd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "setrcvputsock:setsockopt");
-
-
-fprintf(stdout, "[Server] Ready to accept connection from client for put operation \n");
-}
 
 void *thread_sendpkt(void *arg){/*PROBLEMA: scrivere su un contatore globale di npkt posizioni*/
   void *status;
 	struct elab2 *cargo;
-	cargo = (struct elab2 *)arg;
+  struct pkt *sndpkt,*rcvack;
+  int me;
 
-	printf("sono il thread # %d \n",(cargo->thpkt->seq)-(cargo->initialseq));
-	printf("valore : %d \n" ,cargo->p[(cargo->thpkt->seq)-(cargo->initialseq)]);
+  cargo = (struct elab2 *)arg;
+  me = (cargo->thpkt->seq)-(cargo->initialseq);   //numero thread
 
-	cargo->p[(cargo->thpkt->seq)-(cargo->initialseq)] =(int *) 8;
+  sndpkt = (struct pkt *)check_mem(makepkt(5, cargo->thpkt->seq, 0, cargo->thpkt->pktleft, cargo->thpkt->data), "SERVER-get-thread: sndpkt");
 
-	printf("valore : %d \n",cargo->p[(cargo->thpkt->seq)-(cargo->initialseq)]);
-	pthread_exit(status);
+	printf("sono il thread # %d \n",me);
+	printf("valore : %d \n" ,cargo->p[me]);
+
+	//cargo->p[(cargo->thpkt->seq)-(cargo->initialseq)] =(int *) 8;
+
+	printf("valore : %d \n",cargo->p[me]);
+
+
+  sendto(sockd, sndpkt, HEADERSIZE+strlen(sndpkt->data), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
+check_ack:
+  rcvack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "SERVER-get-thread: malloc rcvack");
+  check(recvfrom(sockd,rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "SERVER-get-thread:recvfrom ack-client");
+  //lock buffer
+  if(cargo->p[(rcvack->ack)-(cargo->initialseq)]==0){
+    cargo->p[(rcvack->ack)-(cargo->initialseq)]=cargo->p[(rcvack->ack)-(cargo->initialseq)]+ (int *)1;  /*aumento #ack di 1*/
+    //unlock buffer
+    pthread_exit(status);
+  }
+  if(cargo->p[(rcvack->ack)-(cargo->initialseq)]==2){
+    cargo->p[(rcvack->ack)-(cargo->initialseq)]=cargo->p[(rcvack->ack)-(cargo->initialseq)]+ (int *)1;
+    printf("dovrei fare una fast retransmit del pkt con #seg: %d/n",rcvack->ack );
+    //unlock buffer
+    goto check_ack;
+  }
+  else{
+    cargo->p[(rcvack->ack)-(cargo->initialseq)]=cargo->p[(rcvack->ack)-(cargo->initialseq)]+ (int *)1;
+    //unlock buffer
+    goto check_ack;
+  }
+
+  /*buffer[num_threads]
+
+thread[i]:
+    initialseqnumb = 50;
+	mynumb = 50+i;
+    sendto(cargo seq = mynumb);
+
+do:
+    rcvfrom(sock, pack)
+    --- lock(buffer)
+    if (buffer[pack.ack-initialseqnumb] =3){
+		-- unlock
+		sendto(cargo seq = mynumb+1)
+		goto do;
+	} else if(buffer[pack.ack-initialseqnumb] = 0){
+		write buffer[pack.ack-initialseqnumb] = +1;
+		exit;
+	} else {
+		write buffer[pack.ack-initialseqnumb] = +1;
+	}
+    --- unlock
+	goto do;
+	*/
 
 }
 
@@ -87,7 +128,7 @@ int get(int iseq,int iack, int numpkt, char * filename){ //iseq=11,iack=31,numpk
   struct pkt *pktget; //array di pkt da inviare
   struct elab2 **sendpkt;
   int fd;
-  int j,z;
+  int i,j,k,z;
   pthread_t tid;
   void **status;
 	int **counter;
@@ -96,7 +137,7 @@ int get(int iseq,int iack, int numpkt, char * filename){ //iseq=11,iack=31,numpk
   int init= iseq;
 
   //  setsock();
-  ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "GET-server:malloc ack")
+  ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "GET-server:malloc ack");
   check(recvfrom(sockd,ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "GET-server:recvfrom ack-client");
   if(strcmp(ack->data, "ok")==0){   /* ho ricevuto ack positivo dal client */
     printf("[SERVER] Connection established \n");
@@ -160,12 +201,24 @@ transfer:
         printf("server:ERRORE pthread_create GET in main");
         exit(EXIT_FAILURE);
       }
-      for (int j = 0; j < numpkt; j++) {
-        pthread_join(tid,status);
+    }
+    for ( k = 0; k < numpkt; k++) {
+      pthread_join(tid,status);
+    }
+    //controllo che siano stati ricevuti tutti gli ACK
+    for (i=0; i<numpkt; i++){
+      if(counter[i]==(int *)0){
+        printf("errore nell'invio del pkt: %d/n", i);
+        return 0;
       }
     }
-  } // else other statuses
-  return 0; /* ho ricevuto ack negatico dal client */
+    return 1;
+  }
+  else{
+    printf("il client rifiuta il trasferimento del file/n");
+    return 0; /* ho ricevuto ack negativo dal client */
+  }
+
 }
 
 
@@ -176,8 +229,7 @@ int put(struct pkt *pkt, int filesize){
 
 	char *status = "ok";
 	cpacket = pkt;
-	setrcvputsock();
-	sendack(rcvputsockd, cpacket->seq, filesize, status);
+	sendack(sockd, cpacket->seq, filesize, status);
 printf("[Server] Sending ACK for connection for put operation to client #%d...\n\n", cliaddr.sin_port);
 }
 
