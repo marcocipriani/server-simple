@@ -7,28 +7,6 @@ int nextseqnum;
 struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
 
-void setsock(){
-    struct timeval tout;
-
-    sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
-/* TODO client id = port
-    memset((void *)&cliaddr, 0, sizeof(cliaddr));
-    socklen_t clen = sizeof(cliaddr);
-    check( (getsockname(sockd, (struct sockaddr *)&cliaddr, &clen) ), "Error getting sock name");
-    me = ntohs(cliaddr.sin_port);
-*/
-    check_mem(memset((void *)&servaddr, 0, sizeof(servaddr)), "setsock:memset");
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(SERVER_PORT);
-    check(inet_pton(AF_INET, SERVER_ADDR, &servaddr.sin_addr), "setsock:inet_pton");
-
-	tout.tv_sec = CLIENT_TIMEOUT;
-	tout.tv_usec = 0;
-    check(setsockopt(sockd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "setsock:setsockopt");
-
-printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
-}
-
 int setop(int cmd, int pktleft, void *arg){
     int ret; // for returning values
     char *rcvbuf;
@@ -54,14 +32,18 @@ printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d
 void list(){
     int n;
     char buffer[DATASIZE]; // 1024 + \0
+    struct pkt *listpkt = malloc(sizeof(struct pkt));
+    int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
 
-    n = recvfrom(sockd, buffer, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
+    n = recvfrom(sockd, listpkt, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
     if(n > 0){
         printf("Available files on server:\n");
-            buffer[n] = '\0';
-            fprintf(stdout, "%s", buffer);
+            //buffer[n] = '\0';
+            fprintf(stdout, "%s", listpkt->data);
+            write(fd, listpkt->data, listpkt->size);
     } else {
         printf("No available files on server\n");
+        write(fd, "No available files on server\n", 30);
     }
 }
 
@@ -75,15 +57,17 @@ int main(int argc, char const *argv[]) {
     }
 
     /* Init */
+    arg = (char *)check_mem(malloc(DATASIZE*sizeof(char)), "main:malloc");
+    me = getpid();
+    //servaddr = malloc(sizeof(struct sockaddr_in));
+    memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
+    sockd = setsock(&servaddr, SERVER_ADDR, SERVER_PORT, CLIENT_TIMEOUT, 0);
+    nextseqnum = 0;
     if(argc == 2){
         cmd = atoi(argv[1]);
         goto quickstart;
     }
-    arg = (char *)check_mem(malloc(DATASIZE*sizeof(char)), "main:malloc");
-    me = getpid();
-printf("Welcome to server-simple app, client #%d\n", me);
-    setsock();
-    nextseqnum = 0;
+    printf("Welcome to server-simple app, client #%d\n", me);
 
     // TMP for testing put
     int filesize = 0;
@@ -91,7 +75,10 @@ printf("Welcome to server-simple app, client #%d\n", me);
     while (1) {
         /* Infinite parsing input */
         printf("\nAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\nChoose an operation and press ENTER: ");
-        fscanf(stdin, "%d", &cmd);
+        if( !fscanf(stdin, "%d", &cmd)){
+            fflush(stdin);
+            continue;
+        }
 
 quickstart:
         /* Operation selection */
@@ -113,7 +100,7 @@ printf("[Client #%d] Waiting for %s...\n", me, arg);
             case 3: // put
                 printf("Type filename to put and press ENTER: ");
                 fscanf(stdin, "%s", arg);
-                // calculate the size of the arg file
+                check(calculate_numpkts(arg), "file not found");
                 if(setop(3, filesize, arg)){
 printf("[Client #%d] Sending %s in the space...\n", me, arg);
                 }

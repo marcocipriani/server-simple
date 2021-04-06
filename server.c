@@ -1,27 +1,12 @@
 #include "common.c"
 #include "config.h"
 
-int sockd;
 int nextseqnum;
 char *msg;
-struct sockaddr_in cliaddr;
+struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
 
-void setsock(){
-    struct sockaddr_in servaddr;
-
-    check(sockd = socket(AF_INET, SOCK_DGRAM, 0), "setsock:socket");
-
-    check_mem(memset((void *)&servaddr, 0, sizeof(servaddr)), "setsock:memset");
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(SERVER_PORT);
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    check(bind(sockd, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setsock:bind");
-
-fprintf(stdout, "[Server] Ready to accept on port %d\n\n", SERVER_PORT);
-}
-
-void sendack(int cliseq, int pktleft, char *status){
+void sendack(int sockd, int cliseq, int pktleft, char *status){
     struct pkt *ack;
 
     nextseqnum++;
@@ -42,9 +27,15 @@ void list(char** res, const char* path){
     fread(*res, DATASIZE, 1, file);
 }
 
+void get(struct pkt *reqdata){
+printf("I'm alive %d\n", getpid());
+printf("%s\n", reqdata->data);
+}
+
 int main(int argc, char const* argv[]) {
     char *spath = DEFAULT_PATH; // root folder for server
     struct pkt *cpacket;
+    int sockd;
 
     /* Usage */
     if(argc > 2){
@@ -55,16 +46,24 @@ int main(int argc, char const* argv[]) {
     if(argc > 1) spath = (char *)argv[1];
 printf("[Server] Root folder: %s\n", spath);
     nextseqnum = 0;
-    setsock();
+    memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
+    sockd = setsock(&servaddr, NULL, SERVER_PORT, 0, 1);
     cpacket = (struct pkt *)check_mem(malloc(sizeof(struct pkt)), "main:malloc:cpacket");
     len = sizeof(cliaddr);
 
     // TMP for testing list
     char *res = malloc((DATASIZE-1) * sizeof(char)); // client has to put \0 at the end
     char **resptr = &res;
+    struct pkt *listpkt = malloc(sizeof(struct pkt));
     // TMP for testing ack status
     char *status = "ok";
     int filesize = 0, listsize = 0;
+    // TMP for testing get
+    pthread_t tid;
+    struct elab *reqdata;
+    // reqdata = (struct elab *)malloc(sizeof(struct elab));
+    // reqdata->cliaddr = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+    // reqdata->clipacket = (struct pkt *)malloc(sizeof(struct pkt));
 
     while(1){
         /* Infinite receiving  */
@@ -75,27 +74,35 @@ printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\
         /* Operation selection */
         switch (cpacket->op) {
             case 1: // list
-                sendack(cpacket->seq, listsize, status);
+                sendack(sockd, cpacket->seq, listsize, status);
 
                 // TMP for testing list
                 list(resptr, spath);
-                check(sendto(sockd, (char *)res, strlen(res), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "main:sendto");
+                listpkt = makepkt(1, 1, 1, 1, res);
+                check(sendto(sockd, listpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "main:sendto");
 
 printf("[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
+printf("List: %s\n", listpkt->data);
                 break;
             case 2: // get
-                 // calculate the size of the arg file
-                sendack(cpacket->seq, filesize, status);
+
+                reqdata->cliaddr = cliaddr;
+                printf("reqdata->cliaddr %s\n", reqdata->cliaddr);
+                reqdata->clipacket = *cpacket;
+                printf("reqdata->cpacket %s\n", reqdata->clipacket.data);
+                pthread_create(&tid, NULL, get, reqdata);
+
+                sendack(sockd, cpacket->seq, filesize, status);
 printf("My job here is done\n\n");
                 break;
             case 3: // put
-                sendack(cpacket->seq, 0, status);
+                sendack(sockd, cpacket->seq, 0, status);
 printf("My job here is done\n\n");
                 break;
             default:
 printf("[Server] Can't handle this packet\n\n");
                 // SEND A NACK? to protect from wrong packets
-                sendack(cpacket->seq, 0, "malformed packet");
+                sendack(sockd, cpacket->seq, 0, "malformed packet");
                 break;
         }
     }
