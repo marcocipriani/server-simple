@@ -27,11 +27,6 @@ void list(char** res, const char* path){
     fread(*res, DATASIZE, 1, file);
 }
 
-void get(struct pkt *reqdata){
-printf("I'm alive %d\n", getpid());
-printf("%s\n", reqdata->data);
-}
-
 int main(int argc, char const* argv[]) {
     char *spath = DEFAULT_PATH; // root folder for server
     struct pkt *cpacket;
@@ -58,12 +53,6 @@ printf("[Server] Root folder: %s\n", spath);
     // TMP for testing ack status
     char *status = "ok";
     int filesize = 0, listsize = 0;
-    // TMP for testing get
-    pthread_t tid;
-    struct elab *reqdata;
-    // reqdata = (struct elab *)malloc(sizeof(struct elab));
-    // reqdata->cliaddr = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
-    // reqdata->clipacket = (struct pkt *)malloc(sizeof(struct pkt));
 
     while(1){
         /* Infinite receiving  */
@@ -85,12 +74,6 @@ printf("[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
 printf("List: %s\n", listpkt->data);
                 break;
             case 2: // get
-
-                reqdata->cliaddr = cliaddr;
-                printf("reqdata->cliaddr %s\n", reqdata->cliaddr);
-                reqdata->clipacket = *cpacket;
-                printf("reqdata->cpacket %s\n", reqdata->clipacket.data);
-                pthread_create(&tid, NULL, get, reqdata);
 
                 sendack(sockd, cpacket->seq, filesize, status);
 printf("My job here is done\n\n");
