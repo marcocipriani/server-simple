@@ -16,10 +16,12 @@
 #include "config.h"
 
 struct pkt{
-    int op; // 0 synop-abort, 1 synop-list, 2 synop-get, 3 synop-put, 4 ack, 5 cargo
+    int op; // synop-abort:0 synop-list:1 synop-get:2 synop-put:3 ack:4 cargo:5
     int seq;
     int ack;
-    int pktleft; // previously status // synop-put:totalpackets cargo:transfernumber ack-list:totalpackets ack-get:totalpackets ack-put:0
+    int pktleft;
+        // client synop-abort:notset synop-list:notset synop-get:notset synop-put:totalpackets cargo:relativepktnumber ack-list:notset ack-get:notset
+        // server ack-list:totalpackets ack-get:totalpackets ack-put:notset cargo:relativepktnumber
     int size;
     char data[DATASIZE]; // synop: arg, ack:operationstatus (0 ok 1 denied 2 trylater) empty for ack
 };
@@ -37,7 +39,7 @@ struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
     packet->seq = seq;
     packet->ack = ack;
     packet->pktleft = pktleft;
-    packet->size = strlen((char *)data); // or sizeof?
+    packet->size = strlen((char *)data);
     memcpy(packet->data, data, packet->size);
 
     return packet;
@@ -47,13 +49,10 @@ int calculate_numpkts(char *pathname){
     struct stat finfo;
     int numpkts = -1;
 
-    //finfo = (struct stat *)malloc(sizeof(struct stat));
-
     if( stat(pathname, &finfo) == 0){
         numpkts = finfo.st_size / (DATASIZE);
         if((finfo.st_size % (DATASIZE)) != 0 || numpkts == 0) ++numpkts;
     }
-printf("numpkts: %d\n", numpkts);
 
     return numpkts;
 }
