@@ -66,6 +66,7 @@ int check(int exp, const char *msg){
     }
     return exp;
 }
+
 void* check_mem(void *mem, const char *msg){
     if(mem == NULL){
         perror(msg);
@@ -73,4 +74,31 @@ void* check_mem(void *mem, const char *msg){
         exit(EXIT_FAILURE);
     }
     return mem;
+}
+
+int setsock(struct sockaddr_in *addr, char *address, int port, int seconds, int isServer){
+    int sockd;
+    struct timeval tout;
+
+    sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
+
+    //check_mem(memset((void *)&addr, 0, sizeof(addr)), "setsock:memset");
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons(port);
+
+    if(isServer){
+        addr->sin_addr.s_addr = htonl(INADDR_ANY);
+
+        check(bind(sockd, (struct sockaddr *)addr, sizeof(struct sockaddr)), "setsock:bind");
+printf("[Server] Ready to accept on port %d (sockd = %d)\n\n", port, sockd);
+    } else {
+        check(inet_pton(AF_INET, address, &addr->sin_addr), "setsock:inet_pton");
+printf("[Client] Ready to contact %s at %d.\n", address, port);
+    }
+
+    tout.tv_sec = seconds;
+    tout.tv_usec = 0;
+    check(setsockopt(sockd, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout)), "setsock:setsockopt");
+
+    return sockd;
 }

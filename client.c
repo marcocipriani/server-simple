@@ -7,28 +7,6 @@ int nextseqnum;
 struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
 
-void setsock(){
-    struct timeval tout;
-
-    sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
-/* TODO client id = port
-    memset((void *)&cliaddr, 0, sizeof(cliaddr));
-    socklen_t clen = sizeof(cliaddr);
-    check( (getsockname(sockd, (struct sockaddr *)&cliaddr, &clen) ), "Error getting sock name");
-    me = ntohs(cliaddr.sin_port);
-*/
-    check_mem(memset((void *)&servaddr, 0, sizeof(servaddr)), "setsock:memset");
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(SERVER_PORT);
-    check(inet_pton(AF_INET, SERVER_ADDR, &servaddr.sin_addr), "setsock:inet_pton");
-
-	tout.tv_sec = CLIENT_TIMEOUT;
-	tout.tv_usec = 0;
-    check(setsockopt(sockd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "setsock:setsockopt");
-
-printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
-}
-
 int setop(int cmd, int pktleft, void *arg){
     int ret; // for returning values
     char *rcvbuf;
@@ -79,15 +57,17 @@ int main(int argc, char const *argv[]) {
     }
 
     /* Init */
+    arg = (char *)check_mem(malloc(DATASIZE*sizeof(char)), "main:malloc");
+    me = getpid();
+    //servaddr = malloc(sizeof(struct sockaddr_in));
+    memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
+    sockd = setsock(&servaddr, SERVER_ADDR, SERVER_PORT, CLIENT_TIMEOUT, 0);
+    nextseqnum = 0;
     if(argc == 2){
         cmd = atoi(argv[1]);
         goto quickstart;
     }
-    arg = (char *)check_mem(malloc(DATASIZE*sizeof(char)), "main:malloc");
-    me = getpid();
-printf("Welcome to server-simple app, client #%d\n", me);
-    setsock();
-    nextseqnum = 0;
+    printf("Welcome to server-simple app, client #%d\n", me);
 
     // TMP for testing put
     int filesize = 0;

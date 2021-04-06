@@ -3,25 +3,8 @@
 
 int nextseqnum;
 char *msg;
-struct sockaddr_in cliaddr;
+struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
-
-int setsock(){
-    int sockd;
-    struct sockaddr_in servaddr;
-
-    check(sockd = socket(AF_INET, SOCK_DGRAM, 0), "setsock:socket");
-
-    check_mem(memset((void *)&servaddr, 0, sizeof(servaddr)), "setsock:memset");
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(SERVER_PORT);
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    check(bind(sockd, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setsock:bind");
-
-fprintf(stdout, "[Server] Ready to accept on port %d (sockd = %d)\n\n", SERVER_PORT, sockd);
-
-    return sockd;
-}
 
 void sendack(int sockd, int cliseq, int pktleft, char *status){
     struct pkt *ack;
@@ -63,7 +46,8 @@ int main(int argc, char const* argv[]) {
     if(argc > 1) spath = (char *)argv[1];
 printf("[Server] Root folder: %s\n", spath);
     nextseqnum = 0;
-    sockd = setsock();
+    memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
+    sockd = setsock(&servaddr, NULL, SERVER_PORT, 0, 1);
     cpacket = (struct pkt *)check_mem(malloc(sizeof(struct pkt)), "main:malloc:cpacket");
     len = sizeof(cliaddr);
 
