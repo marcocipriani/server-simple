@@ -75,7 +75,10 @@ int main(int argc, char const *argv[]) {
     while (1) {
         /* Infinite parsing input */
         printf("\nAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\nChoose an operation and press ENTER: ");
-        fscanf(stdin, "%d", &cmd);
+        if( !fscanf(stdin, "%d", &cmd)){
+            fflush(stdin);
+            continue;
+        }
 
 quickstart:
         /* Operation selection */
