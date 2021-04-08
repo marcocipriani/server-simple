@@ -79,7 +79,9 @@ int freespacebuf(int totpkt){
 	res = sizeof(rcvbuf)-totpktsize;
 	if (res >=0) {
 	return 1;
-	} else return 0;
+  } else{
+    return 0;
+  }
 }
 
 void list(){
@@ -99,27 +101,58 @@ void list(){
 
 int get(int iseq, void *pathname){
 
-  int npkt;
+  int fd;
+  size_t filesize;
+  int npkt,edgepkt;
+  int pos,lastpktsize;
+  //char *tmpbuff[];
   struct pkt *ack, *cargo;
 
   setsock();
   ack = check(setop(2, iseq, 0, pathname),"GET: setop"); /* ricevo da setop #pkt da ricevere */
   npkt = ack->pktleft;
+  edgepkt=npkt; /*porcata per tenere a mente #pkt totali del file da ricevere SOL: do + while!!!*/
+
+  initseqserver = ack->seq;
+
   iseq++; //un pacchetto lo ha già inviato nella semop con numero di seq = iseq
   //controllo su buffer CLIENT
   if(freespacebuf(npkt)){
       sendack(sockid, iseq, ack->seq, 0, "ok");
 /*----ricezione cargo---*/
+receiver:
       while(npkt>0)  {
         cargo = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "GET-client:malloc cargo");
         check(recvfrom(sockid,cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "GET-client:recvfrom Cargo"); /*attesa di ricevere cargo dal server */
-writeonbuff:
+
         //scriviiiii
+        if((pos=(cargo->seq - initseqserver))>edgepkt && pos=(cargo->seq - initseqserver)<0){
+          printf("numero sequenza pacchetto ricevuto fuori range \n");
+          return 0;
+        }
+        if(rcvbuf[pos*(DATASIZE)]==NULL){
+          if(cargo->seq==(initseqserver+edgepkt)){
+            lastpktsize = cargo->size;
+          }
+          memcpy(&rcvbuf[pos*(DATASIZE)],cargo->data,DATASIZE);
+          sendack(sockid, iseq, cargo->seq, 0, "ok");
+          printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo->seq,pos);
+        }
+        else{
+          sendack(sockid, iseq, cargo->seq, 0, "ok");
+          goto receiver;    /*il pacchetto viene scartato*/
+        }
         npkt--;
       }
+      filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
+      fd = open(pathname,O_RDWR|O_TRUNC|O_CREAT,0666);
+      writen(fd,rcvbuf,filesize);
+      printf("il file %s e' stato correttamente scaricato\n",pathname); //UTOPIA
+      return 1;
     }
   else{
     sendack(sockid, iseq, ack->seq, 0, "fullClientBuf"); //ack negativo
+    return 0;
   }
 }
 
@@ -217,7 +250,12 @@ printf("[Client #%d] Looking for list of default folder...\n", me);
                 printf("Type filename to get and press ENTER: ");
                 fscanf(stdin, "%s", arg);
                 printf("[Client #%d] File selected is %s", me, arg);
-                if(get(seq, arg)){}
+                if(get(seq, arg)){
+                  printf("GET conclusa\n");
+                }
+                else{
+                  printf("GET: qualcosa e' andato storto\n");
+                }
                 break;
 put:
             case 3: // put

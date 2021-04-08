@@ -208,7 +208,7 @@ transfer:
     //controllo che siano stati ricevuti tutti gli ACK
     for (i=0; i<numpkt; i++){
       if(counter[i]==(int *)0){
-        printf("errore nell'invio del pkt: %d/n", i);
+        printf("errore nell'invio/ricezione del pkt/ack: %d/n", i);
         return 0;
       }
     }
