@@ -56,50 +56,68 @@ printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d
     return -1;
 }
 
-void list(int totalpackets ){
-
+void list(){
     int n;
-    char * arg;
-    char * buffAvailable;
+    //char * buffAvailable;
     char buffer[DATASIZE]; // 1024 + \0
-    char buffer2[4000];
-    int fd;
-
+    struct pkt *listpkt = malloc(sizeof(struct pkt));
     struct pkt *ack2;
-    struct pkt *pkt;
-
-    //synop-list
-
-    buffAvailable = malloc(totalpackets*sizeof(struct pkt*) );
-
-    //allocare spazio per il packet = (...)
-    pkt = (struct pkt*) malloc(sizeof(struct pkt*));
-
-    //recvfrom totalpackets cargo in questo caso(banale) ne ricevo solo uno
-    //ma se faccio un iterazione posso ricevere più pacchetti
-
-    recvfrom(sockd,pkt,MAXTRANSUNIT,0,NULL, NULL);
-    printf(" stampa pkt %s",pkt->data);
+    //buffAvailable = malloc(totalpackets*sizeof(struct pkt*) );
 
     //abbiamo aperto o creato un file per salvare la lista
     fd = open(filename,O_CREAT| O_RDWR|O_TRUNC,0666);
     if (fd == -1){printf("errore nella open \n");}
-
     //abbiamo aperto lo stream a quel file
     file = fdopen(fd,"w+");
     if(file == NULL){printf("errore nella fdopen \n");}
 
-    fprintf(file,"%s",pkt->data);
+    //recvfrom
+    n = recvfrom(sockd, listpkt, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
+    if(n > 0){
+        printf("\nAvailable files on server:\n");
+            //buffer[n] = '\0';
+            fprintf(stdout, "%s", listpkt->data);
+            write(fd, listpkt->data, listpkt->size);
+            /*
+            nextseqnum++;
+            ack2 = malloc(sizeof(struct pkt ));
+            ack2 = (struct pkt *)makepkt(4, nextseqnum,listpkt->size, 0, NULL);
+
+            //ack2 = (struct pkt*) malloc(sizeof(struct pkt*));
+            nextseqnum++;
+            ack2 = check_mem(makepkt(4, nextseqnum,pktlist->seq, 0, NULL),"errore makepkt ack");  //vedi common
+            printf("\n%d\n",ack2->op);
+            sendto(sockd,ack2,MAXTRANSUNIT,0,(struct sockaddr *)&servaddr,sizeof(servaddr) );
+            */
+            printf("ciao");
+    } else {
+        printf("No available files on server\n");
+        write(fd, "No available files on server\n", 30);
+    }
+}
+/*
+void list(int totalpackets ){
+
+    //allocare spazio per il packet = (...)
+    pktlist = malloc(sizeof(struct pkt));
+
+    n = recvfrom(sockd,pktlist,DATASIZE,0,(struct sockaddr *)&servaddr, &len);
+    if(n > 0){
+      printf("\nciao");
+      fprintf(stdout,"%s",pktlist->data);
+
+      write(fd, pktlist->data, pktlist->size);
+    }
 
     //allocare lo spazio per l' ack = (...)
     ack2 = (struct pkt*) malloc(sizeof(struct pkt*));
 
-    ack2 = check_mem(makepkt(4, nextseqnum,pkt->seq, 0, NULL),"errore makepkt ack");  //vedi common
+    ack2 = check_mem(makepkt(4, nextseqnum,pktlist->seq, 0, NULL),"errore makepkt ack");  //vedi common
     printf("\n%d\n",ack2->op);
     sendto(sockd,ack2,MAXTRANSUNIT,0,(struct sockaddr *)&servaddr,sizeof(servaddr) );
 
 }
-
+*/
 int main(int argc, char const *argv[]) {
     int cmd;
     char *arg;
