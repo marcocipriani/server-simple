@@ -57,17 +57,17 @@ printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d
 printf("[Client #%d] Connection established \n", me);
   return ack;
   } // else other statuses
-  return -1;
+  return NULL;
 }
 
 void sendack(int sockid, int ownseq, int iack, int pktleft, char *status){ //ownseq for pkt seq of process, ack = ownseq of other process
     struct pkt *ack;
-    struct sockaddr *servaddr;
-
-    ack = (struct pkt *)check_mem(makepkt(4, ownseq, iack, pktleft, status), "sendack:makepkt");
-
-    check(sendto(sockid, ack, HEADERSIZE+strlen(status), 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "sendack:sendto");
-printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
+    
+    //struct sockaddr *servaddr;
+    ack = (struct pkt *)check_mem(makepkt(4, ownseq, iack, pktleft, status), "sendack:makepkt"); //QUA SI BLOCCA
+    check(sendto(sockid,(struct pkt *)ack, HEADERSIZE+ack->size, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "sendack:sendto");
+	printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
+	
 }
 
 
@@ -104,12 +104,14 @@ int get(int iseq, void *pathname){
   int fd;
   size_t filesize;
   int npkt,edgepkt;
-  int pos,lastpktsize;
+  int pos,lastpktsize,initseqserver;
   //char *tmpbuff[];
   struct pkt *ack, *cargo;
 
   setsock();
-  ack = check(setop(2, iseq, 0, pathname),"GET: setop"); /* ricevo da setop #pkt da ricevere */
+  if((ack = setop(2, iseq, 0, pathname))==NULL){ /* ricevo da setop #pkt da ricevere */
+  	return -1;
+  }
   npkt = ack->pktleft;
   edgepkt=npkt; /*porcata per tenere a mente #pkt totali del file da ricevere SOL: do + while!!!*/
 
@@ -124,13 +126,14 @@ receiver:
       while(npkt>0)  {
         cargo = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "GET-client:malloc cargo");
         check(recvfrom(sockid,cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "GET-client:recvfrom Cargo"); /*attesa di ricevere cargo dal server */
-
         //scriviiiii
-        if((pos=(cargo->seq - initseqserver))>edgepkt && pos=(cargo->seq - initseqserver)<0){
+        printf("pacchetto ricevuto: seq %d, ack %d, pktleft %d, size %d, data %s \n", cargo->seq, cargo->ack, cargo->pktleft, cargo->size, cargo->data);
+        pos=(cargo->seq - initseqserver);
+        if(pos>edgepkt && pos<0){
           printf("numero sequenza pacchetto ricevuto fuori range \n");
           return 0;
         }
-        if(rcvbuf[pos*(DATASIZE)]==NULL){
+        if((rcvbuf[pos*(DATASIZE)])==0){
           if(cargo->seq==(initseqserver+edgepkt)){
             lastpktsize = cargo->size;
           }
@@ -145,12 +148,13 @@ receiver:
         npkt--;
       }
       filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
-      fd = open(pathname,O_RDWR|O_TRUNC|O_CREAT,0666);
+      fd = open("tumadre",O_RDWR|O_TRUNC|O_CREAT,0666);
       writen(fd,rcvbuf,filesize);
-      printf("il file %s e' stato correttamente scaricato\n",pathname); //UTOPIA
+      printf("il file %s e' stato correttamente scaricato\n",(char *)pathname); //UTOPIA
       return 1;
     }
   else{
+  	printf("non ho trovato spazio libero nel buff \n");
     sendack(sockid, iseq, ack->seq, 0, "fullClientBuf"); //ack negativo
     return 0;
   }
@@ -168,7 +172,7 @@ int put(int iseq, int npkt, void *pathname) {
     //DOVREBBE REINVIARE UN ACK SE VOGLIAMO FARE PER OGNI OP IL 3-WAY HANDSHAKING, sendack e poi iseq++
 		fd = open((char *)pathname,O_RDONLY,00700); //DA TESTARE
 		if (fd == -1){
-			printf("[Client #%d] Problem opening file %s \n", me, pathname);
+			printf("[Client #%d] Problem opening file %s \n", me, (char *)pathname);
 			exit(EXIT_FAILURE);}  //da risolvere, in caso di errore dove redirectiamo il codice
 
 /* FUNZIONE TRANSFER CON WSIZE MOBILE per ora disabilitato

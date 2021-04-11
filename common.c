@@ -12,8 +12,16 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <ctype.h>
+#include <sys/mman.h>
+#include <pthread.h>
+
 
 #include "config.h"
+
+
+int count = 0;
+struct pkt *packet;
+
 
 struct pkt{
     int op; // 0 synop-abort, 1 synop-list, 2 synop-get, 3 synop-put, 4 ack, 5 cargo
@@ -37,15 +45,22 @@ struct elab2{
 };
 
 struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
-    struct pkt *packet;
 
-    packet = (struct pkt *)malloc(sizeof(struct pkt));
+	
+	printf("sto per fare la malloc \n");
+	if (count == 0 ){
+    	packet = (struct pkt *)malloc(sizeof(struct pkt)); //AL PRIMO ACK CHE LA GET INVIA PER IL CARGO RICEVUTO DA malloc: corrupted top size
+    	printf("malloc fatta \n");
+    }
+    
     packet->op = op;
     packet->seq = seq;
     packet->ack = ack;
     packet->pktleft = pktleft;
     packet->size = strlen((char *)data); // or sizeof?
-    memcpy(packet->data, data, sizeof(data));
+    memcpy(packet->data, data, packet->size);
+    count++;
+    printf("count: %d \n",count);
 
     return packet;
 }
