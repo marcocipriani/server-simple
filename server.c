@@ -13,10 +13,9 @@ void sendack(int sockd, int op, int cliseq, int pktleft, char *status){
     struct pkt ack;
 
     nextseqnum++;
-    // op = 4 if positive, 5 negative
     ack = makepkt(op, nextseqnum, cliseq, pktleft, status);
 
-    check(sendto(sockd, &ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) , "sendack:sendto");
+    check(sendto(sockd, &ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)) , "sendack:sendto");
 printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 }
 
@@ -36,21 +35,21 @@ int setop(struct elab opdata){
     int listsize = 0;
 
     // TMP for testing list
-    char *res = malloc((DATASIZE-1) * sizeof(char)); // client has to put \0 at the end
+    char *res = malloc(((DATASIZE)-1) * sizeof(char)); // client has to put \0 at the end
     char **resptr = &res;
     struct pkt listpkt;
 
-    sendack(sockd, 4, opdata.clipacket.seq, listsize, status);
+    sendack(sockd, ACK_POS, opdata.clipacket.seq, listsize, status);
 
 printf("[Server] Waiting for synack...\n"); // TODO in SERVER_TIMEOUT
     recvfrom(sockd, &synack, DATASIZE, 0, (struct sockaddr *)&cliaddr, &len);
 printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
 
-    if(opdata.clipacket.op == 1 && synack.op == 4){
+    if(opdata.clipacket.op == SYNOP_LIST && synack.op == ACK_POS){
 
         // TMP for testing list
         list(resptr, spath);
-        listpkt = makepkt(1, 1, 1, 1, res);
+        listpkt = makepkt(SYNOP_LIST, 1, 1, 1, res);
 printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
         check(sendto(sockd, &listpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)) , "main:sendto");
         return 1;
@@ -78,9 +77,6 @@ printf("[Server] Root folder: %s\n", spath);
     sockd = setsock(&servaddr, NULL, SERVER_PORT, 0, 1);
     len = sizeof(struct sockaddr_in);
 
-    // TMP for testing ack status
-    int filesize = 0;
-
     while(1){
         /* Infinite receiving  */
 printf("[Server] Waiting for synop...\n");
@@ -97,7 +93,7 @@ printf("[Server] Creating elab [addr:?][port:%d][op:%d][seq:%d][ack:%d][pktleft:
         /* Operation selection */
         switch (cpacket.op) {
 
-            case 1: // list
+            case SYNOP_LIST: // list
                 if(setop(epacket)){
 printf("[Server] Operation cmd:%d seq:%d status:completed successfully\n\n", epacket.clipacket.op, epacket.clipacket.seq);
                 } else {
@@ -105,19 +101,19 @@ printf("[Server] Operation cmd:%d seq:%d status:completed unsuccessfully\n\n", e
                 }
                 break;
 
-            case 2: // get
-                sendack(sockd, 5, cpacket.seq, filesize, "generic negative status");
+            case SYNOP_GET: // get
+                sendack(sockd, ACK_NEG, cpacket.seq, 0, "generic negative status");
 printf("My job here is done\n\n");
                 break;
 
-            case 3: // put
-                sendack(sockd, 5, cpacket.seq, 0, "generic negative status");
+            case SYNOP_PUT: // put
+                sendack(sockd, ACK_NEG, cpacket.seq, 0, "generic negative status");
 printf("My job here is done\n\n");
                 break;
 
             default:
 printf("[Server] Can't handle this packet\n\n");
-                sendack(sockd, 5, cpacket.seq, 0, "malformed packet");
+                sendack(sockd, ACK_NEG, cpacket.seq, 0, "malformed packet");
                 break;
         }
     }

@@ -21,14 +21,14 @@ printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIE
     check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
 printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
-    if(ack.op == 4){
+    if(ack.op == ACK_POS){
 printf("[Server] Operation %d #%d permitted\nContinue? [Y/n] ", synop.op, synop.seq);
         fflush(stdin);
         if(getchar()=='n'){
             status = "noserver";
-            cmd = 5;
+            cmd = ACK_NEG;
         } else {
-            cmd = 4;
+            cmd = ACK_POS;
             status = "okserver";
         }
 
@@ -36,7 +36,7 @@ printf("[Server] Operation %d #%d permitted\nContinue? [Y/n] ", synop.op, synop.
         check(sendto(sockd, &synack, synack.size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
 printf("[Client #%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, (char *)synack.data);
 
-        if(cmd == 5){
+        if(cmd == ACK_NEG){
 printf("[Client] Aborting operation\n");
             return 0;
         }
@@ -102,21 +102,23 @@ int main(int argc, char const *argv[]) {
 quickstart:
         /* Operation selection */
         switch (cmd) {
-            case 1: // list
+            case SYNOP_LIST: // list
                 // ask for which path to list
-                if(setop(1, 0, arg)){
+                if(setop(SYNOP_LIST, 0, arg)){
 printf("[Client #%d] Looking for list of default folder...\n", me);
                     list();
                 }
                 break;
-            case 2: // get
+
+            case SYNOP_GET: // get
                 printf("Type filename to get and press ENTER: ");
                 fscanf(stdin, "%s", arg);
-                if(setop(2, 0, arg)){
+                if(setop(SYNOP_GET, 0, arg)){
 printf("[Client #%d] Waiting for %s...\n", me, arg);
                 }
                 break;
-            case 3: // put
+
+            case SYNOP_PUT: // put
 put:
                 printf("Type filename to put and press ENTER: ");
                 fscanf(stdin, "%s", arg);
@@ -124,11 +126,12 @@ put:
                     printf("File not found\n");
                     goto put;
                 }
-                if(setop(3, filesize, arg)){
+                if(setop(SYNOP_PUT, filesize, arg)){
 printf("[Client #%d] Sending %s in the space...\n", me, arg);
                 }
                 break;
-            case 0: // exit
+
+            case SYNOP_ABORT: // exit
                 fprintf(stdout, "Bye client #%d\n", me);
                 exit(EXIT_SUCCESS);
             default:

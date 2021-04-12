@@ -16,9 +16,7 @@
 #include "config.h"
 
 struct pkt{
-    int op; // synop-abort:0 synop-list:1 synop-get:2 synop-put:3
-            // ack-positive:4 ack-negative:5
-            // cargo:6
+    int op; // op codes in config.h
     int seq;
     int ack;
     int pktleft;

@@ -14,4 +14,11 @@
 #define MAXTRANSUNIT 1500
 #define HEADERSIZE 5*sizeof(int)
 #define DATASIZE MAXTRANSUNIT-HEADERSIZE
-// TODO Macro for packets
+// OP codes
+#define SYNOP_ABORT 0
+#define SYNOP_LIST 1
+#define SYNOP_GET 2
+#define SYNOP_PUT 3
+#define ACK_POS 4
+#define ACK_NEG 5
+#define CARGO 6
