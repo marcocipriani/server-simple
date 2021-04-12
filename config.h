@@ -14,3 +14,4 @@
 #define MAXTRANSUNIT 1500
 #define HEADERSIZE 5*sizeof(int)
 #define DATASIZE MAXTRANSUNIT-HEADERSIZE
+// TODO Macro for packets

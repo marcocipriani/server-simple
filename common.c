@@ -16,7 +16,9 @@
 #include "config.h"
 
 struct pkt{
-    int op; // synop-abort:0 synop-list:1 synop-get:2 synop-put:3 ack:4 cargo:5
+    int op; // synop-abort:0 synop-list:1 synop-get:2 synop-put:3
+            // ack-positive:4 ack-negative:5
+            // cargo:6
     int seq;
     int ack;
     int pktleft;
@@ -31,16 +33,15 @@ struct elab{
     struct pkt clipacket;
 };
 
-struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
-    struct pkt *packet;
+struct pkt makepkt(int op, int seq, int ack, int pktleft, void *data){
+    struct pkt packet;
 
-    packet = (struct pkt *)malloc(sizeof(struct pkt));
-    packet->op = op;
-    packet->seq = seq;
-    packet->ack = ack;
-    packet->pktleft = pktleft;
-    packet->size = strlen((char *)data);
-    memcpy(packet->data, data, packet->size);
+    packet.op = op;
+    packet.seq = seq;
+    packet.ack = ack;
+    packet.pktleft = pktleft;
+    packet.size = strlen((char *)data);
+    memcpy(&packet.data, data, packet.size);
 
     return packet;
 }
