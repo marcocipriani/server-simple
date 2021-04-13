@@ -19,8 +19,7 @@
 #include "config.h"
 
 
-int count = 0;
-struct pkt *packet;
+//int count = 0;
 
 
 struct pkt{
@@ -40,29 +39,21 @@ struct elab{
 struct elab2{
     int initialseq;   //numero sequenza iniziale per un dato file
     int **p;          //puntatore a array di contatori (ricezione ack)
-    struct pkt *thpkt;
+    struct pkt thpkt;
 
 };
 
-struct pkt *makepkt(int op, int seq, int ack, int pktleft, void *data){
+int makepkt(struct pkt *packet, int op, int seq, int ack, int pktleft, void *data){
 
-	
-	printf("sto per fare la malloc \n");
-	if (count == 0 ){
-    	packet = (struct pkt *)malloc(sizeof(struct pkt)); //AL PRIMO ACK CHE LA GET INVIA PER IL CARGO RICEVUTO DA malloc: corrupted top size
-    	printf("malloc fatta \n");
-    }
-    
+    //packet = (struct pkt *)malloc(sizeof(struct pkt)); //AL PRIMO ACK CHE LA GET INVIA PER IL CARGO RICEVUTO DA malloc: corrupted top size
     packet->op = op;
     packet->seq = seq;
     packet->ack = ack;
     packet->pktleft = pktleft;
     packet->size = strlen((char *)data); // or sizeof?
     memcpy(packet->data, data, packet->size);
-    count++;
-    printf("count: %d \n",count);
-
-    return packet;
+    
+    return 1;
 }
 
 void* check_mem(void *, const char *);
