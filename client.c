@@ -41,11 +41,10 @@ printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT
 
 struct pkt* setop(int cmd,int ownseq, int pktleft, void *arg){
   struct pkt *synop, *ack;
-  
-
   //nextseqnum++;
+  
   synop = (struct pkt *)check_mem(malloc(sizeof(struct pkt)),"setop: malloc");
-  check(makepkt(synop,cmd, ownseq, 0, pktleft, arg),"setop: makepkt");
+  check(makepkt(synop,cmd, ownseq, 0, pktleft, arg, strlen((char *)arg)),"setop: makepkt");
 
 printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop->op, synop->seq, synop->ack, synop->pktleft, synop->size, (char *)synop->data);
   check(sendto(sockid, (struct pkt *)synop, synop->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setop:sendto");
@@ -121,7 +120,7 @@ int get(int iseq, void *pathname){
   //controllo su buffer CLIENT
   if(freespacebuf(npkt)){
       sack = (struct pkt *)check_mem(malloc(sizeof(struct pkt)),"sack: malloc");
-      check(makepkt(sack, 4, iseq, initseqserver, 0, "ok"),"sack: makepkt");
+      check(makepkt(sack, 4, iseq, initseqserver, 0, "ok", 2),"sack: makepkt");
       sendack(sockid, sack);
       memset(sack->data,0,sack->size+1);
 /*----ricezione cargo---*/
@@ -146,12 +145,12 @@ receiver:
             lastpktsize = cargo->size;
           }
           memcpy(&rcvbuf[pos*(DATASIZE)],cargo->data,DATASIZE);
-          check(makepkt(sack, 4, iseq, cargo->seq, 0, "ok"),"sack-while: makepkt");
+          check(makepkt(sack, 4, iseq, cargo->seq, 0, "ok",2),"sack-while: makepkt");
           sendack(sockid, sack);
           printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo->seq,pos);
         }
         else{
-          check(makepkt(sack, 4, iseq, cargo->seq, 0, "ok"),"sack-while: makepkt");
+          check(makepkt(sack, 4, iseq, cargo->seq, 0, "ok",2),"sack-while: makepkt");
           sendack(sockid, sack);
           memset(sack->data,0,sack->size+1);
           free(cargo);
@@ -174,7 +173,7 @@ receiver:
   else{
     printf("non ho trovato spazio libero nel buff \n");
     sack = (struct pkt *)check_mem(malloc(sizeof(struct pkt)),"snack: malloc");
-    check(makepkt(sack, 4, iseq, initseqserver, 0, "Full_Client_Buff"),"snack: makepkt");
+    check(makepkt(sack, 4, iseq, initseqserver, 0, "Full_Client_Buff",16),"snack: makepkt");
     sendack(sockid, sack); //ack negativo
     return 0;
   }
