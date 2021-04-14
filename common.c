@@ -43,18 +43,20 @@ struct elab2{
 
 };
 
-int makepkt(struct pkt *packet, int op, int seq, int ack, int pktleft, void *data){
+int makepkt(struct pkt *packet, int op, int seq, int ack, int pktleft, void *data, size_t n){
 
     //packet = (struct pkt *)malloc(sizeof(struct pkt)); //AL PRIMO ACK CHE LA GET INVIA PER IL CARGO RICEVUTO DA malloc: corrupted top size
     packet->op = op;
     packet->seq = seq;
     packet->ack = ack;
     packet->pktleft = pktleft;
-    packet->size = strlen((char *)data); // or sizeof?
-    memcpy(packet->data, data, packet->size);
+    packet->size = n; // or sizeof?
+    memcpy(packet->data, data, n);
     
     return 1;
 }
+
+    
 
 void* check_mem(void *, const char *);
 int check(int, const char *);
