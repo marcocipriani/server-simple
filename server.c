@@ -42,12 +42,7 @@ void get(struct pkt *reqdata){
     printf("%s\n", reqdata->data);
 }
 
-
-
-
-
-
-void list(char** res, const char* path){
+void list(char** res, const char* path ,void * address){
     /*char command[DATASIZE];
     FILE* file;
 
@@ -61,7 +56,7 @@ void list(char** res, const char* path){
       in questo caso uso la cartella del progetto*/
     	char *dirname = {"/home/fabio/Scrivania/progetto/server-simple"};
       char fl[20] = {"filelist.txt"};
-      char buff[MAXLINE];
+      char buff[DATASIZE];
       char command[DATASIZE];
       FILE* file;
     	DIR * direc;
@@ -72,13 +67,13 @@ void list(char** res, const char* path){
     	struct dirent **filelist;
     	struct stat data;
 
-    	errno=0;
-
-      //stampo a schermo il contenuto del path
+    	//stampo a schermo il contenuto del path
       sprintf(command, "ls %s | cat > list.txt", path);
       system(command);
 
-      /* Alloca la memoria per memorizzare l'indirizzo del client*/
+
+      /*  collegamento alla socket
+      /* Alloca la memoria per memorizzare l'indirizzo del client
     	socklen_t len = (socklen_t) sizeof(struct sockaddr_in);
     	struct sockaddr_in *cliaddr = malloc(len);
 
@@ -86,15 +81,18 @@ void list(char** res, const char* path){
         exit_on_error("server: malloc cliaddr in list",errno);
       }
 
-      /*Memorizza la struttura contenente l'indirizzo del client */
-    	memcpy(cliaddr,arg,len);
+      /*Memorizza la struttura contenente l'indirizzo del client
+    	memcpy(cliaddr,address,len);
+      */
+
 
     	/*Apri un directory stream*/
 
     	if ( (direc = opendir(dirname)) == NULL) {
-    		perror("opendir");
+    		//errore
     		exit(EXIT_FAILURE);
     	}
+
     	// basterebbe usare chdir(dirname path)
     	fdir = dirfd(direc);
     	fchdir(fdir);	 /*Per posizionarsi sulla directory interessata*/
@@ -102,53 +100,44 @@ void list(char** res, const char* path){
      /*leggi il contenuto della directory,
      ordina in oridine alfabetico tutte le voci e salva l'indirizzo della lista ordinata in filelist*/
 
-    	if((n_entry =scandir(dirname,&filelist,NULL,alphasort)) < 0)
-    		exit_on_error("server:scandir",errno);
-
+    	check(n_entry =scandir(dirname,&filelist,NULL,alphasort)) < 0), "server-list:scandir");
     /*Prendo il lock su mtx per per scrivere la filelist in modo atomico */
 
-    	if(pthread_mutex_lock(&mtx) != 0)
-    		exit_on_error("server:pthread_mutex_lock",errno);
+    	check( pthread_mutex_lock(&mtx) != 0), "server-list:pthread_mutex_lock");
 
      /*Crea un file che contiene la filelist*/
 
-    	fdl = open("/home/fabio/Scrivania/progetto/server-simple/list.txt",O_CREAT | O_RDWR | O_TRUNC,0644);
-    	if(fdl == -1)
-    		exit_on_error("server:open shared_files.txt",errno);
+    	if ((fdl = open("/home/fabio/Scrivania/progetto/server-simple/list.txt",O_CREAT | O_RDWR | O_TRUNC,0644)) == -1){
+        //errore
+      }
 
     /*Scrivi la filelist*/
 
-    	if (snprintf(buff,MAXLINE,"%80s\n\n", "FILELIST")<0)
-    		exit_on_error("server:snprintf",errno);
+    	check(snprintf(buff,DATASIZE,"%80s\n\n", "FILELIST")<0),"server-list:snprintf" );
 
-    	if(writen(fdl,buff,strlen(f))<0)
-    		exit_on_error("server:errore nella scrittura su file",errno);
+    	check(writen(fdl,buff,strlen(buff))<0),"server-list:errore nella scrittura su file writen");
 
-    	if (snprintf(buff,MAXLINE,"\n%-60s%50s\n\n", "Name", "Dimension(byte)")<0)
-    		exit_on_error("server:snprintf",errno);
+    	check(snprintf(buff,DATASIZE,"\n%-60s%50s\n\n", "Name", "Dimension(byte)")<0),"server-list :snprintf";
 
-    	if(writen(fdl,buff,strlen(f))<0)
-    		exit_on_error("server:errore nella scrittura su file",errno);
+    	check(writen(fdl,buff,strlen(buff))<0), "server:errore nella scrittura su file writen");
 
     	for(i=0;i<n_entry;i++){
               /*azzera data  -> void *memset(void *s, int c, size_t n);*/
-          		memset((void *)&data, 0, sizeof(data));
+          		check_mem(memset((void *)&data, 0, sizeof(data)),"server-list: memset");;
 
                /* stat Mi serve per ottenere le informazioni di ciascuna voce
                LA FUNZIONE -> int stat(const char *pathname, struct stat *statbuf); */
               if((stat(filelist[i]->d_name,&data)) ==-1)
-          			exit_on_error("server:stat",errno);
+          			//controllo errore;
 
               /*azzera il buffer*/
-          		memset((void *)buff, 0, MAXLINE);
+          		check_mem(memset((void *)buff, 0, DATASIZE),"server-list: memset");
 
               /*Scrive la dimensione delle voci*/
-          		if(snprintf(buff,MAXLINE,"\n%-60s%50lld\n\n", (filelist[i])->d_name,(long long)data.st_size)<0)
-          			exit_on_error("server:snprintf",errno);
+          		check(snprintf(buff,DATASIZE,"\n%-60s%50lld\n\n", (filelist[i])->d_name,(long long)data.st_size)<0),"server:snprintf");
 
               /*Scrivi via via le voci su file*/
-          		if(writen(fdl,buff,strlen(f))<0)
-          			exit_on_error("server:errore nella scrittura su file",errno);
+          		check(writen(fdl,buff,strlen(buff))<0), "server:errore nella scrittura su file");
      }
      /*Dealloca il vettore di strutture dirent*/
     	while(--i > 0)
@@ -156,12 +145,11 @@ void list(char** res, const char* path){
     	free(filelist);
       /* Chiudi il directory stream*/
     	if(closedir(direc) == -1)
-    		exit_on_error("server:closedir",errno);
+    		//controllo errore
 
     /*Unlock del mutex*/
 
-    	if(pthread_mutex_unlock(&mtx) != 0)
-    		exit_on_error("server:pthread_mutex_unlock",errno);
+    	check(pthread_mutex_unlock(&mtx) != 0),"server-list:pthread_mutex_lock");
 
 }
 
@@ -210,7 +198,7 @@ printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\
             case 1: // list
 
                 // TMP for testing list
-                list(resptr, spath);
+                list(resptr, spath, address);
                 sendack(sockd, cpacket->seq, /*listsize*/ 1, status);
 
 printf("[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
@@ -220,19 +208,6 @@ printf("[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
                 printf("ECCO LA LIST:\n%s\n",pktlist->data);
                 sendto(sockd, pktlist,DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
 //fine list
-
-
-
-
-
-
-
-
-
-
-
-
-
 
                 break;
             case 2: // get
