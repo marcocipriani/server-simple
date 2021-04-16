@@ -8,42 +8,89 @@ struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
 
 int setop(int cmd, int pktleft, void *arg){
-    int ret; // for returning values
-    char *rcvbuf;
-    struct pkt *synop, *ack;
+    struct pkt synop, ack, synack;
+    char *status = malloc((DATASIZE)*sizeof(char));
 
     nextseqnum++;
-    synop = (struct pkt *)check_mem(makepkt(cmd, nextseqnum, 0, pktleft, arg), "setop:makepkt");
+    synop = makepkt(cmd, nextseqnum, 0, pktleft, arg);
 
-printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop->op, synop->seq, synop->ack, synop->pktleft, synop->size, (char *)synop->data);
-    check(sendto(sockd, (struct pkt *)synop, synop->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setop:sendto");
+printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
+    check(sendto(sockd, &synop, synop.size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
 
 printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
-    ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt *)), "setop:malloc");
-    check(recvfrom(sockd, ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
-printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
+    check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
+printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
-    if(strcmp(ack->data, "ok")==0){
+    if(ack.op == ACK_POS){
+printf("[Server] Operation %d #%d permitted [estimated packets: %d]\nContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
+        fflush(stdin);
+        if(getchar()=='n'){
+            status = "noserver";
+            cmd = ACK_NEG;
+        } else {
+            cmd = ACK_POS;
+            status = "okserver";
+        }
+
+        synack = makepkt(cmd, nextseqnum, 0, pktleft, status);
+        check(sendto(sockd, &synack, synack.size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
+printf("[Client #%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, (char *)synack.data);
+
+        if(cmd == ACK_NEG){
+printf("[Client] Aborting operation\n");
+            return 0;
+        }
         return 1;
-    } // else other statuses
+    }
+
+printf("[Server] Operation %d #%d not permitted\n", synop.op, synop.seq);
+
     return 0;
+}
+
+void sendack(int sockd, int op, int cliseq, int pktleft, char *status){
+    struct pkt ack;
+
+    nextseqnum++;
+    ack = makepkt(op, nextseqnum, cliseq, pktleft, status);
+
+    check(sendto(sockd, &ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)), "sendack:sendto");
+printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 }
 
 void list(){
     int n;
-    char buffer[DATASIZE]; // 1024 + \0
-    struct pkt *listpkt = malloc(sizeof(struct pkt));
+    struct pkt listpkt;
     int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
 
-    n = recvfrom(sockd, listpkt, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
+    n = recvfrom(sockd, &listpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len);
+printf("[Client #%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
     if(n > 0){
         printf("Available files on server:\n");
             //buffer[n] = '\0';
-            fprintf(stdout, "%s", listpkt->data);
-            write(fd, listpkt->data, listpkt->size);
+            fprintf(stdout, "%s", listpkt.data);
+            write(fd, listpkt.data, listpkt.size);
     } else {
         printf("No available files on server\n");
         write(fd, "No available files on server\n", 30);
+    }
+}
+
+void get(char *filename){
+    int n;
+    struct pkt getpkt;
+    char *localpathname = malloc(DATASIZE * sizeof(char));
+    sprintf(localpathname, "%s%s", CLIENT_FOLDER, filename);
+    int fd = open(localpathname, O_CREAT|O_RDWR|O_TRUNC, 0666);
+
+    n = recvfrom(sockd, &getpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len);
+printf("[Client #%d] Received cargo from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, getpkt.op, getpkt.seq, getpkt.ack, getpkt.pktleft, getpkt.size, (char *)getpkt.data);
+    if(n > 0){
+            write(fd, getpkt.data, getpkt.size);
+            sendack(sockd, ACK_POS, getpkt.seq, 0, "okclient");
+    } else {
+        printf("Nothing from server\n");
+            sendack(sockd, ACK_NEG, getpkt.seq, 0, "okserver");
     }
 }
 
@@ -62,6 +109,7 @@ int main(int argc, char const *argv[]) {
     //servaddr = malloc(sizeof(struct sockaddr_in));
     memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
     sockd = setsock(&servaddr, SERVER_ADDR, SERVER_PORT, CLIENT_TIMEOUT, 0);
+//seq = 1+rand()%99;
     nextseqnum = 0;
     if(argc == 2){
         cmd = atoi(argv[1]);
@@ -83,29 +131,37 @@ int main(int argc, char const *argv[]) {
 quickstart:
         /* Operation selection */
         switch (cmd) {
-            case 1: // list
+            case SYNOP_LIST: // list
                 // ask for which path to list
-                if( setop(1, 0, arg) ){
+                if(setop(SYNOP_LIST, 0, arg)){
 printf("[Client #%d] Looking for list of default folder...\n", me);
+                    list();
                 }
-                list();
                 break;
-            case 2: // get
+
+            case SYNOP_GET: // get
                 printf("Type filename to get and press ENTER: ");
                 fscanf(stdin, "%s", arg);
-                if(setop(2, 0, arg)){
+                if(setop(SYNOP_GET, 0, arg)){
 printf("[Client #%d] Waiting for %s...\n", me, arg);
+                    get(arg);
                 }
                 break;
-            case 3: // put
+
+            case SYNOP_PUT: // put
+put:
                 printf("Type filename to put and press ENTER: ");
                 fscanf(stdin, "%s", arg);
-                check(calculate_numpkts(arg), "file not found");
-                if(setop(3, filesize, arg)){
+                if(calculate_numpkts(arg) < 0){
+                    printf("File not found\n");
+                    goto put;
+                }
+                if(setop(SYNOP_PUT, filesize, arg)){
 printf("[Client #%d] Sending %s in the space...\n", me, arg);
                 }
                 break;
-            case 0: // exit
+
+            case SYNOP_ABORT: // exit
                 fprintf(stdout, "Bye client #%d\n", me);
                 exit(EXIT_SUCCESS);
             default:
