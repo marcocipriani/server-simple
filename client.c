@@ -48,6 +48,16 @@ printf("[Server] Operation %d #%d not permitted\n", synop.op, synop.seq);
     return 0;
 }
 
+void sendack(int sockd, int op, int cliseq, int pktleft, char *status){
+    struct pkt ack;
+
+    nextseqnum++;
+    ack = makepkt(op, nextseqnum, cliseq, pktleft, status);
+
+    check(sendto(sockd, &ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)), "sendack:sendto");
+printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+}
+
 void list(){
     int n;
     struct pkt listpkt;
@@ -66,6 +76,24 @@ printf("[Client #%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%
     }
 }
 
+void get(char *filename){
+    int n;
+    struct pkt getpkt;
+    char *localpathname = malloc(DATASIZE * sizeof(char));
+    sprintf(localpathname, "%s%s", CLIENT_FOLDER, filename);
+    int fd = open(localpathname, O_CREAT|O_RDWR|O_TRUNC, 0666);
+
+    n = recvfrom(sockd, &getpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len);
+printf("[Client #%d] Received cargo from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, getpkt.op, getpkt.seq, getpkt.ack, getpkt.pktleft, getpkt.size, (char *)getpkt.data);
+    if(n > 0){
+            write(fd, getpkt.data, getpkt.size);
+            sendack(sockd, ACK_POS, getpkt.seq, 0, "okclient");
+    } else {
+        printf("Nothing from server\n");
+            sendack(sockd, ACK_NEG, getpkt.seq, 0, "okserver");
+    }
+}
+
 int main(int argc, char const *argv[]) {
     int cmd;
     char *arg;
@@ -81,6 +109,7 @@ int main(int argc, char const *argv[]) {
     //servaddr = malloc(sizeof(struct sockaddr_in));
     memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
     sockd = setsock(&servaddr, SERVER_ADDR, SERVER_PORT, CLIENT_TIMEOUT, 0);
+//seq = 1+rand()%99;
     nextseqnum = 0;
     if(argc == 2){
         cmd = atoi(argv[1]);
@@ -115,6 +144,7 @@ printf("[Client #%d] Looking for list of default folder...\n", me);
                 fscanf(stdin, "%s", arg);
                 if(setop(SYNOP_GET, 0, arg)){
 printf("[Client #%d] Waiting for %s...\n", me, arg);
+                    get(arg);
                 }
                 break;
 

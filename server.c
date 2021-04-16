@@ -15,11 +15,24 @@ void sendack(int sockd, int op, int cliseq, int pktleft, char *status){
     nextseqnum++;
     ack = makepkt(op, nextseqnum, cliseq, pktleft, status);
 
-    check(sendto(sockd, &ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)) , "sendack:sendto");
+    check(sendto(sockd, &ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)), "sendack:sendto");
 printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 }
 
-void list(char** res, const char* path){
+int waitforack(){
+    struct pkt ack;
+
+printf("[Server] Waiting for ack...\n");
+    check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "waitforack:recvfrom");
+printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, ack.data);
+
+    if(ack.op == ACK_POS){
+        return 1;
+    }
+    return 0;
+}
+
+void makelist(char** res, const char* path){
     char command[DATASIZE];
     FILE* file;
 
@@ -30,14 +43,45 @@ void list(char** res, const char* path){
     fread(*res, DATASIZE, 1, file);
 }
 
-int setop(struct elab opdata){
-    struct pkt synack;
-    int listsize = 0;
-
-    // TMP for testing list
+void managelist(){
     char *res = malloc(((DATASIZE)-1) * sizeof(char)); // client has to put \0 at the end
     char **resptr = &res;
     struct pkt listpkt;
+
+    makelist(resptr, spath);
+    listpkt = makepkt(CARGO, nextseqnum, 1, 1, res);
+printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
+    check(sendto(sockd, &listpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)) , "main:sendto");
+}
+
+void get(char *pathname){
+    int n; // for waitforack
+    char *res = malloc(((DATASIZE)-1) * sizeof(char)); // client has to put \0 at the end
+    struct pkt getpkt;
+    char *localpathname = malloc(DATASIZE * sizeof(char));
+printf("Server folder:%s %s\n", SERVER_FOLDER, pathname);
+    sprintf(localpathname, "%s%s", SERVER_FOLDER, pathname);
+printf("localpathname: %s\n", localpathname);
+    int filength = calculate_filelength(localpathname);
+    int fd = open(localpathname, O_RDONLY, 0666);
+
+    read(fd, res, filength);
+    getpkt = makepkt(CARGO, nextseqnum, 1, 1, res);
+
+    do {
+printf("[Server] Sending cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", getpkt.op, getpkt.seq, getpkt.ack, getpkt.pktleft, getpkt.size, (char *)getpkt.data);
+        check(sendto(sockd, &getpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)) , "main:sendto");
+
+        n = waitforack();
+
+    } while(n==0);
+}
+
+
+int setop(struct elab opdata){
+    struct pkt synack;
+    // TMP for testing 1 packet scenarios
+    int listsize = 1;
 
     sendack(sockd, ACK_POS, opdata.clipacket.seq, listsize, status);
 
@@ -46,14 +90,13 @@ printf("[Server] Waiting for synack...\n"); // TODO in SERVER_TIMEOUT
 printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
 
     if(opdata.clipacket.op == SYNOP_LIST && synack.op == ACK_POS){
-
-        // TMP for testing list
-        list(resptr, spath);
-        listpkt = makepkt(SYNOP_LIST, 1, 1, 1, res);
-printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
-        check(sendto(sockd, &listpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)) , "main:sendto");
+        managelist();
         return 1;
-
+    }
+    if(opdata.clipacket.op == SYNOP_GET && synack.op == ACK_POS){
+printf("File requested %s\n", opdata.clipacket.data);
+        get(opdata.clipacket.data);
+        return 1;
     }
 
 printf("[Server] Client operation aborted\n");
@@ -102,11 +145,16 @@ printf("[Server] Operation cmd:%d seq:%d status:completed unsuccessfully\n\n", e
                 break;
 
             case SYNOP_GET: // get
-                sendack(sockd, ACK_NEG, cpacket.seq, 0, "generic negative status");
-printf("My job here is done\n\n");
+                if(setop(epacket)){
+                    get(epacket.clipacket.data);
+printf("[Server] Operation cmd:%d seq:%d status:completed successfully\n\n", epacket.clipacket.op, epacket.clipacket.seq);
+                } else {
+printf("[Server] Operation cmd:%d seq:%d status:completed unsuccessfully\n\n", epacket.clipacket.op, epacket.clipacket.seq);
+                }
                 break;
 
             case SYNOP_PUT: // put
+                // TMP disabled by default
                 sendack(sockd, ACK_NEG, cpacket.seq, 0, "generic negative status");
 printf("My job here is done\n\n");
                 break;
