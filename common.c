@@ -44,14 +44,24 @@ struct pkt makepkt(int op, int seq, int ack, int pktleft, void *data){
     return packet;
 }
 
+int calculate_filelength(char *pathname){
+    struct stat finfo;
+    int filelength = 0;
+
+    if( stat(pathname, &finfo) == 0){
+        filelength = finfo.st_size;
+    }
+
+    return filelength;
+}
+
 int calculate_numpkts(char *pathname){
     struct stat finfo;
     int numpkts = -1;
+    int filelength = calculate_filelength(pathname);
 
-    if( stat(pathname, &finfo) == 0){
-        numpkts = finfo.st_size / (DATASIZE);
-        if((finfo.st_size % (DATASIZE)) != 0 || numpkts == 0) ++numpkts;
-    }
+    numpkts = filelength / (DATASIZE);
+    if((filelength % (DATASIZE)) != 0 || numpkts == 0) ++numpkts;
 
     return numpkts;
 }
