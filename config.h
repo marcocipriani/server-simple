@@ -4,11 +4,13 @@
 #define BACKLOG 10
 #define DEFAULT_PATH "~"
 #define SERVER_BUFSIZE 1024
+#define SERVER_FOLDER "./server-files/"
 
 // Client settings
 #define CLIENT_PORT 4193
 #define CLIENT_BUFSIZE 1024
 #define CLIENT_TIMEOUT 5
+#define CLIENT_FOLDER "./client-files/"
 
 // Packet settings
 #define MAXTRANSUNIT 1500
