@@ -22,7 +22,7 @@ printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIE
 printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
     if(ack.op == ACK_POS){
-printf("[Server] Operation %d #%d permitted\nContinue? [Y/n] ", synop.op, synop.seq);
+printf("[Server] Operation %d #%d permitted [estimated packets: %d]\nContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
         fflush(stdin);
         if(getchar()=='n'){
             status = "noserver";
