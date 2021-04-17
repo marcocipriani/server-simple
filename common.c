@@ -38,25 +38,25 @@ struct elab{
 
 struct elab2{
     int initialseq;   //numero sequenza iniziale per un dato file
-    int **p;          //puntatore a array di contatori (ricezione ack)
+    int *p;          //puntatore a array di contatori (ricezione ack)
     struct pkt thpkt;
 
 };
 
-int makepkt(struct pkt *packet, int op, int seq, int ack, int pktleft, void *data, size_t n){
-
+struct pkt makepkt(int op, int seq, int ack, int pktleft, void *data, size_t n){
+    struct pkt packet;
     //packet = (struct pkt *)malloc(sizeof(struct pkt)); //AL PRIMO ACK CHE LA GET INVIA PER IL CARGO RICEVUTO DA malloc: corrupted top size
-    packet->op = op;
-    packet->seq = seq;
-    packet->ack = ack;
-    packet->pktleft = pktleft;
-    packet->size = n; // or sizeof?
-    memcpy(packet->data, data, n);
-    
-    return 1;
+    packet.op = op;
+    packet.seq = seq;
+    packet.ack = ack;
+    packet.pktleft = pktleft;
+    packet.size = n; // or sizeof?
+    memcpy(&packet.data, data, n);
+
+    return packet;
 }
 
-    
+
 
 void* check_mem(void *, const char *);
 int check(int, const char *);

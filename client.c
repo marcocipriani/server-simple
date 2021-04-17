@@ -39,34 +39,31 @@ void setsock(){ //futuri cambiamenti +numport
 printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
 }
 
-struct pkt* setop(int cmd,int ownseq, int pktleft, void *arg){
-  struct pkt *synop, *ack;
+struct pkt setop(int cmd,int ownseq, int pktleft, void *arg){
+  struct pkt synop, ack;
   //nextseqnum++;
-  
-  synop = (struct pkt *)check_mem(malloc(sizeof(struct pkt)),"setop: malloc");
-  check(makepkt(synop,cmd, ownseq, 0, pktleft, arg, strlen((char *)arg)),"setop: makepkt");
 
-printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop->op, synop->seq, synop->ack, synop->pktleft, synop->size, (char *)synop->data);
-  check(sendto(sockid, (struct pkt *)synop, synop->size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setop:sendto");
+  synop=makepkt(cmd, ownseq, 0, pktleft, arg, strlen((char *)arg));
+
+printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
+  check(sendto(sockid, &synop, synop.size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "setop:sendto");
 printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
-  ack = (struct pkt *)check_mem(malloc(sizeof(struct pkt)), "setop:malloc");
-  check(recvfrom(sockid, (struct pkt *)ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
-printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
+  check(recvfrom(sockid, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
+printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
-  free(synop);
-  if(strcmp(ack->data, "ok")==0){
+  if(strcmp(ack.data, "ok")==0){
 printf("[Client #%d] Connection established \n", me);
   return ack;
   } // else other statuses
-  return NULL;
+  exit(EXIT_FAILURE);
 }
 
-void sendack(int sockid, struct pkt * ack){ //ownseq for pkt seq of process, ack = ownseq of other process
-       
+void sendack(int sockid, struct pkt ack){ //ownseq for pkt seq of process, ack = ownseq of other process
+
     //struct sockaddr *servaddr;
-    check(sendto(sockid,(struct pkt *)ack, HEADERSIZE+ack->size, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "sendack:sendto");
-    printf("[Client] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack->op, ack->seq, ack->ack, ack->pktleft, ack->size, (char *)ack->data);
-	
+    check(sendto(sockid,&ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "sendack:sendto");
+    printf("[Client] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+
 }
 
 
@@ -105,61 +102,55 @@ int get(int iseq, void *pathname){
   int npkt,edgepkt;
   int pos,lastpktsize,initseqserver;
   //char *tmpbuff[];
-  struct pkt *rack, *sack, *cargo;
+  struct pkt rack, sack, cargo;
 
   setsock();
-  if((rack = setop(2, iseq, 0, pathname))==NULL){ /* ricevo da setop #pkt da ricevere */
-  	return -1;
-  }
-  npkt = rack->pktleft;
+  rack = setop(2, iseq, 0, pathname); /* ricevo da setop #pkt da ricevere */
+
+  npkt = rack.pktleft;
   edgepkt=npkt; /*porcata per tenere a mente #pkt totali del file da ricevere SOL: do + while!!!*/
 
-  initseqserver = rack->seq;
-  free(rack);
+  initseqserver = rack.seq;
   iseq++; //un pacchetto lo ha già inviato nella semop con numero di seq = iseq
   //controllo su buffer CLIENT
   if(freespacebuf(npkt)){
-      sack = (struct pkt *)check_mem(malloc(sizeof(struct pkt)),"sack: malloc");
-      check(makepkt(sack, 4, iseq, initseqserver, 0, "ok", 2),"sack: makepkt");
+      sack = makepkt( 4, iseq, initseqserver, 0, "ok", 2);
       sendack(sockid, sack);
-      memset(sack->data,0,sack->size+1);
+      //memset(sack.data,0,sack.size);
 /*----ricezione cargo---*/
 receiver:
       while(npkt>0)  {
-        cargo = (struct pkt *)check_mem(malloc(sizeof(struct pkt )), "GET-client:malloc cargo");
-        check(recvfrom(sockid,cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "GET-client:recvfrom Cargo"); /*attesa di ricevere cargo dal server */
+        check(recvfrom(sockid,&cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "GET-client:recvfrom Cargo"); /*attesa di ricevere cargo dal server */
         //scriviiiii
-        printf("pacchetto ricevuto: seq %d, ack %d, pktleft %d, size %d, data %s \n", cargo->seq, cargo->ack, cargo->pktleft, cargo->size, cargo->data);
-        pos=(cargo->seq - initseqserver);
-        printf("cargo->seq: %d \n",cargo->seq);
+        printf("pacchetto ricevuto: seq %d, ack %d, pktleft %d, size %d, data %s \n", cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
+        pos=(cargo.seq - initseqserver);
+        printf("cargo->seq: %d \n",cargo.seq);
         printf("initseqserver: %d \n",initseqserver);
         printf("pos: %d \n",pos);
-        
+
         if(pos>edgepkt && pos<0){
           printf("numero sequenza pacchetto ricevuto fuori range \n");
           return 0;
           /* DA MODIFICARE IN SEGUITO*/
         }
         else if((rcvbuf[pos*(DATASIZE)])==0){	/*sono nell'intervallo corretto*/
-          if(cargo->seq==(initseqserver+edgepkt-1)){
-            lastpktsize = cargo->size;
+          if(cargo.seq==(initseqserver+edgepkt-1)){
+            lastpktsize = cargo.size;
           }
-          memcpy(&rcvbuf[pos*(DATASIZE)],cargo->data,DATASIZE);
-          check(makepkt(sack, 4, iseq, cargo->seq, 0, "ok",2),"sack-while: makepkt");
+          memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
+          sack=makepkt( 4, iseq, cargo.seq, 0, "ok",2);
           sendack(sockid, sack);
-          printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo->seq,pos);
+          printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
         }
         else{
-          check(makepkt(sack, 4, iseq, cargo->seq, 0, "ok",2),"sack-while: makepkt");
+          sack=makepkt( 4, iseq, cargo.seq, 0, "ok",2);
           sendack(sockid, sack);
-          memset(sack->data,0,sack->size+1);
-          free(cargo);
-          
+          //memset(sack.data,0,sack.size);
           goto receiver;    /*il pacchetto viene scartato*/
         }
-        npkt--;
-        memset(sack->data,0,sack->size);
-        free(cargo);
+      npkt--;
+      //  memset(sack.data,0,sack.size);
+      //  free(cargo);
       }
       filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
       printf("(edgepkt-1): %d \n",(edgepkt-1));
@@ -172,8 +163,7 @@ receiver:
     }
   else{
     printf("non ho trovato spazio libero nel buff \n");
-    sack = (struct pkt *)check_mem(malloc(sizeof(struct pkt)),"snack: malloc");
-    check(makepkt(sack, 4, iseq, initseqserver, 0, "Full_Client_Buff",16),"snack: makepkt");
+    sack=makepkt( 4, iseq, initseqserver, 0, "Full_Client_Buff",16);
     sendack(sockid, sack); //ack negativo
     return 0;
   }
@@ -264,9 +254,9 @@ quickstart:
         switch (cmd) {
             case 1: // list
                 // ask for which path to list
-                if( (setop(1, seq, 0, arg)) >= 0 ){
+                /*if( (setop(1, seq, 0, arg)) >= 0 ){
 printf("[Client #%d] Looking for list of default folder...\n", me);
-                }
+                }*/
                 list();
                 break;
             case 2: // get
