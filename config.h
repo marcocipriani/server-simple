@@ -2,7 +2,6 @@
 #define SERVER_PORT 5193
 #define SERVER_ADDR "127.0.0.1"
 #define BACKLOG 10
-#define DEFAULT_PATH "~"
 #define SERVER_BUFSIZE 1024
 #define SERVER_FOLDER "./server-files/"
 

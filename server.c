@@ -5,9 +5,9 @@ int nextseqnum;
 char *msg;
 struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
+char *spath = SERVER_FOLDER;
     int sockd; // global until setop calls for setsock
     char *status = "okclient";
-    char *spath = DEFAULT_PATH; // root folder for server
 
 void sendack(int sockd, int op, int cliseq, int pktleft, char *status){
     struct pkt ack;
