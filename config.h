@@ -3,6 +3,8 @@
 #define SERVER_ADDR "127.0.0.1"
 #define BACKLOG 10
 #define SERVER_BUFSIZE 1024
+//#define SERVER_TIMEOUT 5
+#define DEFAULT_PATH "~"
 #define SERVER_FOLDER "./server-files/"
 
 // Client settings

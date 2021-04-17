@@ -11,9 +11,14 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+//#include <ctype.h>
+//#include <sys/mman.h>
 #include <pthread.h>
 
+
 #include "config.h"
+
+
 
 struct pkt{
     int op; // op codes in config.h
@@ -31,18 +36,25 @@ struct elab{
     struct pkt clipacket;
 };
 
-struct pkt makepkt(int op, int seq, int ack, int pktleft, void *data){
+struct elab2{
+    int initialseq;   //numero sequenza iniziale per un dato file
+    int *p;          //puntatore a array di contatori (ricezione ack)
+    struct pkt thpkt;
+};
+
+struct pkt makepkt(int op, int seq, int ack, int pktleft, void *data, size_t n){
     struct pkt packet;
 
     packet.op = op;
     packet.seq = seq;
     packet.ack = ack;
     packet.pktleft = pktleft;
-    packet.size = strlen((char *)data);
-    memcpy(&packet.data, data, packet.size);
+    packet.size = n; 
+    memcpy(&packet.data, data, n);
 
     return packet;
 }
+
 
 int calculate_filelength(char *pathname){
     struct stat finfo;
@@ -58,6 +70,7 @@ int calculate_filelength(char *pathname){
 int calculate_numpkts(char *pathname){
     struct stat finfo;
     int numpkts = -1;
+
     int filelength = calculate_filelength(pathname);
 
     numpkts = filelength / (DATASIZE);
@@ -65,6 +78,7 @@ int calculate_numpkts(char *pathname){
 
     return numpkts;
 }
+
 
 int check(int exp, const char *msg){
     if(exp < 0){
@@ -83,6 +97,49 @@ void* check_mem(void *mem, const char *msg){
     }
     return mem;
 }
+
+
+ssize_t readn(int fd, void *vptr, size_t n) {/* Read "n" bytes from a descriptor. */
+   size_t  nleft;
+   ssize_t nread;
+   char   *ptr;
+
+   ptr = vptr;
+   nleft = n;
+   while (nleft > 0) {
+       if ( (nread = read(fd, ptr, nleft)) < 0) {
+           if (errno == EINTR)
+               nread = 0;      /* and call read() again */
+           else
+               return (-1);
+       } else if (nread == 0)
+           break;              /* EOF */
+
+       nleft -= nread;
+       ptr += nread;
+       //ALERT :if((int)nread<(int)n) break;	/* Se leggi di meno non bloccare ed esci dal ciclo*/
+   }
+   return (n - nleft);         /* return byte letti */
+ }
+
+ ssize_t writen(int fd, const void *vptr, size_t n){  /* Write "n" bytes to a descriptor. */
+     size_t nleft;
+     ssize_t nwritten;
+     const char *ptr;
+     ptr = vptr;
+     nleft = n;
+     while (nleft > 0) {
+         if ( (nwritten = write(fd, ptr, nleft)) <= 0) {
+             if (nwritten < 0 && errno == EINTR)
+                 nwritten = 0;   /* and call write() again */
+             else
+                 return (-1);    /* error */
+          }
+          nleft -= nwritten;
+          ptr += nwritten;
+     }
+     return (n);    /* byte ancora da scrivere*/
+ }
 
 int setsock(struct sockaddr_in *addr, char *address, int port, int seconds, int isServer){
     int sockd;
@@ -110,3 +167,4 @@ printf("[Client] Ready to contact %s at %d.\n", address, port);
 
     return sockd;
 }
+
