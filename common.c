@@ -11,22 +11,22 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
-#include <ctype.h>
-#include <sys/mman.h>
+//#include <ctype.h>
+//#include <sys/mman.h>
 #include <pthread.h>
 
 
 #include "config.h"
 
 
-//int count = 0;
-
 
 struct pkt{
-    int op; // 0 synop-abort, 1 synop-list, 2 synop-get, 3 synop-put, 4 ack, 5 cargo
+    int op; // op codes in config.h
     int seq;
     int ack;
-    int pktleft; // previously status // synop-put:totalpackets cargo:transfernumber ack-list:totalpackets ack-get:totalpackets ack-put:0
+    int pktleft;
+        // client synop-abort:notset synop-list:notset synop-get:notset synop-put:totalpackets cargo:relativepktnumber ack-list:notset ack-get:notset
+        // server ack-list:totalpackets ack-get:totalpackets ack-put:notset cargo:relativepktnumber
     int size;
     char data[DATASIZE]; // synop: arg, ack:operationstatus (0 ok 1 denied 2 trylater) empty for ack
 };
@@ -40,47 +40,43 @@ struct elab2{
     int initialseq;   //numero sequenza iniziale per un dato file
     int *p;          //puntatore a array di contatori (ricezione ack)
     struct pkt thpkt;
-
 };
 
 struct pkt makepkt(int op, int seq, int ack, int pktleft, void *data, size_t n){
     struct pkt packet;
-    //packet = (struct pkt *)malloc(sizeof(struct pkt)); //AL PRIMO ACK CHE LA GET INVIA PER IL CARGO RICEVUTO DA malloc: corrupted top size
+
     packet.op = op;
     packet.seq = seq;
     packet.ack = ack;
     packet.pktleft = pktleft;
-    packet.size = n; // or sizeof?
+    packet.size = n; 
     memcpy(&packet.data, data, n);
 
     return packet;
 }
 
 
+int calculate_filelength(char *pathname){
+    struct stat finfo;
+    int filelength = 0;
 
-void* check_mem(void *, const char *);
-int check(int, const char *);
+    if( stat(pathname, &finfo) == 0){
+        filelength = finfo.st_size;
+    }
+
+    return filelength;
+}
 
 int calculate_numpkts(char *pathname){
     struct stat finfo;
     int numpkts = -1;
 
-    if( stat(pathname, &finfo) == 0){
-        numpkts = finfo.st_size / (DATASIZE);
-        if((finfo.st_size % (DATASIZE)) != 0 || numpkts == 0) {
-        ++numpkts;}
-    } else printf("File %s not found, please check filename and retry \n", pathname);
+    int filelength = calculate_filelength(pathname);
+
+    numpkts = filelength / (DATASIZE);
+    if((filelength % (DATASIZE)) != 0 || numpkts == 0) ++numpkts;
 
     return numpkts;
-}
-
-int check_mutex(int exp, const char *msg){
-    if(exp != 0){
-        perror(msg);
-        fprintf(stderr, "Error code %d\n", errno);
-        exit(EXIT_FAILURE);
-    }
-    return exp;
 }
 
 
@@ -101,6 +97,7 @@ void* check_mem(void *mem, const char *msg){
     }
     return mem;
 }
+
 
 ssize_t readn(int fd, void *vptr, size_t n) {/* Read "n" bytes from a descriptor. */
    size_t  nleft;
@@ -143,3 +140,31 @@ ssize_t readn(int fd, void *vptr, size_t n) {/* Read "n" bytes from a descriptor
      }
      return (n);    /* byte ancora da scrivere*/
  }
+
+int setsock(struct sockaddr_in *addr, char *address, int port, int seconds, int isServer){
+    int sockd;
+    struct timeval tout;
+
+    sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
+
+    //check_mem(memset((void *)&addr, 0, sizeof(addr)), "setsock:memset");
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons(port);
+
+    if(isServer){
+        addr->sin_addr.s_addr = htonl(INADDR_ANY);
+
+        check(bind(sockd, (struct sockaddr *)addr, sizeof(struct sockaddr)), "setsock:bind");
+printf("[Server] Ready to accept on port %d (sockd = %d)\n\n", port, sockd);
+    } else {
+        check(inet_pton(AF_INET, address, &addr->sin_addr), "setsock:inet_pton");
+printf("[Client] Ready to contact %s at %d.\n", address, port);
+    }
+
+    tout.tv_sec = seconds;
+    tout.tv_usec = 0;
+    check(setsockopt(sockd, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout)), "setsock:setsockopt");
+
+    return sockd;
+}
+

@@ -17,7 +17,8 @@ int pthread_mutex_unlock(pthread_mutex_t *);
 int mainthput(int,int,int); */
 
 
-void setsock(){ //futuri cambiamenti +numport
+
+void setsock2(){ //futuri cambiamenti +numport
   	struct timeval tout;
 
   	sockid = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
@@ -58,13 +59,52 @@ printf("[Client #%d] Connection established \n", me);
   exit(EXIT_FAILURE);
 }
 
-void sendack(int sockid, struct pkt ack){ //ownseq for pkt seq of process, ack = ownseq of other process
+
+void sendack2(int sockid, struct pkt ack){ //ownseq for pkt seq of process, ack = ownseq of other process
 
     //struct sockaddr *servaddr;
     check(sendto(sockid,&ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "sendack:sendto");
     printf("[Client] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
 }
+int setop2(int cmd, int pktleft, void *arg){
+    struct pkt synop, ack, synack;
+    char *status = malloc((DATASIZE)*sizeof(char));
+    
+    printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
+    check(sendto(sockd, &synop, synop.size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
+
+printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
+    check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
+printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+
+    if(ack.op == ACK_POS){
+printf("[Server] Operation %d #%d permitted [estimated packets: %d]\nContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
+        fflush(stdin);
+        if(getchar()=='n'){
+            status = "noserver";
+            cmd = ACK_NEG;
+        } else {
+            cmd = ACK_POS;
+            status = "okserver";
+        }
+
+        synack = makepkt(cmd, nextseqnum, 0, pktleft, status, strlen(status));
+        check(sendto(sockd, &synack, synack.size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
+printf("[Client #%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, (char *)synack.data);
+
+        if(cmd == ACK_NEG){
+printf("[Client] Aborting operation\n");
+            return 0;
+        }
+        return 1;
+    }
+
+printf("[Server] Operation %d #%d not permitted\n", synop.op, synop.seq);
+    return 0;
+
+}
+
 
 
 int freespacebuf(int totpkt){
@@ -76,21 +116,55 @@ int freespacebuf(int totpkt){
 	if (res >=0) {
 	return 1;
   } else{
-    return 0;
+        return 0;
   }
+}
+
+
+void sendack(int sockd, int op, int cliseq, int pktleft, char *status){
+    struct pkt ack;
+
+    nextseqnum++;
+    ack = makepkt(op, nextseqnum, cliseq, pktleft, status,strlen(status));
+
+    check(sendto(sockd, &ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)), ":sendto");
+printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 }
 
 void list(){
     int n;
-    char buffer[DATASIZE]; // 1024 + \0
+    struct pkt listpkt;
+    int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
 
-    n = recvfrom(sockid, buffer, DATASIZE, 0, (struct sockaddr *)&servaddr, &len);
+    n = recvfrom(sockd, &listpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len);
+printf("[Client #%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
+
     if(n > 0){
         printf("Available files on server:\n");
-            buffer[n] = '\0';
-            fprintf(stdout, "%s", buffer);
+            //buffer[n] = '\0';
+            fprintf(stdout, "%s", listpkt.data);
+            write(fd, listpkt.data, listpkt.size);
     } else {
         printf("No available files on server\n");
+        write(fd, "No available files on server\n", 30);
+    }
+}
+
+void get(char *filename){
+    int n;
+    struct pkt getpkt;
+    char *localpathname = malloc(DATASIZE * sizeof(char));
+    sprintf(localpathname, "%s%s", CLIENT_FOLDER, filename);
+    int fd = open(localpathname, O_CREAT|O_RDWR|O_TRUNC, 0666);
+
+    n = recvfrom(sockd, &getpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len);
+printf("[Client #%d] Received cargo from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, getpkt.op, getpkt.seq, getpkt.ack, getpkt.pktleft, getpkt.size, (char *)getpkt.data);
+    if(n > 0){
+            write(fd, getpkt.data, getpkt.size);
+            sendack(sockd, ACK_POS, getpkt.seq, 0, "okclient");
+    } else {
+        printf("Nothing from server\n");
+            sendack(sockd, ACK_NEG, getpkt.seq, 0, "okserver");
     }
 }
 
@@ -104,7 +178,7 @@ int get(int iseq, void *pathname){
   //char *tmpbuff[];
   struct pkt rack, sack, cargo;
 
-  setsock();
+  setsock2();
   rack = setop(2, iseq, 0, pathname); /* ricevo da setop #pkt da ricevere */
 
   npkt = rack.pktleft;
@@ -115,7 +189,7 @@ int get(int iseq, void *pathname){
   //controllo su buffer CLIENT
   if(freespacebuf(npkt)){
       sack = makepkt( 4, iseq, initseqserver, 0, "ok", 2);
-      sendack(sockid, sack);
+      sendack2(sockid, sack);
       //memset(sack.data,0,sack.size);
 /*----ricezione cargo---*/
 receiver:
@@ -139,12 +213,12 @@ receiver:
           }
           memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
           sack=makepkt( 4, iseq, cargo.seq, 0, "ok",2);
-          sendack(sockid, sack);
+          sendack2(sockid, sack);
           printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
         }
         else{
           sack=makepkt( 4, iseq, cargo.seq, 0, "ok",2);
-          sendack(sockid, sack);
+          sendack2(sockid, sack);
           //memset(sack.data,0,sack.size);
           goto receiver;    /*il pacchetto viene scartato*/
         }
@@ -164,54 +238,10 @@ receiver:
   else{
     printf("non ho trovato spazio libero nel buff \n");
     sack=makepkt( 4, iseq, initseqserver, 0, "Full_Client_Buff",16);
-    sendack(sockid, sack); //ack negativo
+    sendack2(sockid, sack); //ack negativo
     return 0;
   }
 }
-
-/*int put(int iseq, int npkt, void *pathname) {
-	int ret; // for returning values
-  	int fd;
-  	int pktremain,pktosend;
-  	struct pkt *synop, *ack, *cargo;
-
-	setsock();
-	if (setop(3, iseq, npkt, pathname)>= 0){  //else goto input
-		iseq++;
-    //DOVREBBE REINVIARE UN ACK SE VOGLIAMO FARE PER OGNI OP IL 3-WAY HANDSHAKING, sendack e poi iseq++
-		fd = open((char *)pathname,O_RDONLY,00700); //DA TESTARE
-		if (fd == -1){
-			printf("[Client #%d] Problem opening file %s \n", me, (char *)pathname);
-			exit(EXIT_FAILURE);}  //da risolvere, in caso di errore dove redirectiamo il codice
-
-/* FUNZIONE TRANSFER CON WSIZE MOBILE per ora disabilitato
-transfer:
-		check_mutex(pthread_mutex_lock(&wsizemutex),"put:lockmutex");				//prendo il controllo di wsize
-		pktremain = npkt-wsize;														//calcolo i pacchetti che mi restano
-		if(pktremain <= 0 ){														//num pkt da inviare entra nella finestra, non ho pkt rimanenti
-			wsize = wsize-npkt;														//aggiorno wsize
-			check_mutex(pthread_mutex_unlock(&wsizemutex),"put:unlockmutex1");		//rilascio wsize
-			//mainthput(fd,iseq,npkt);
-			return 1;
-		} else {  																	//num pkt da inviare nn entra nella finestra, avrò pkt rimasti
-			pktosend = wsize;														//num pacchetti che posso inviare
-			wsize = wsize-(npkt-pktremain);											//aggiorno wsize
-			check_mutex(pthread_mutex_unlock(&wsizemutex),"put:unlockmutex2");		//rilascio wsize
-			npkt = pktremain;														//il tot dei pkt da inviare = pkt rimasti
-			//mainthput(fd,iseq,pktosend);
-			goto transfer;
-  			exit(EXIT_FAILURE);
-      } */
-/*		} else {
-      printf("[Client #%d] Problem with connection to the Server \n", me);
-      sendack(sockid, iseq, ack->seq, 0, "errConnToServ");
-    }
-}
-*/
-/*int mainthput(int fd, int seq, int npkt) { FUNZIONE TRASFERIMENTO FILE
-	return 1;
-
-}   */
 
 
 int main(int argc, char const *argv[]) {
@@ -222,71 +252,77 @@ int main(int argc, char const *argv[]) {
 	int seq;
 	struct stat filestat;
 
+
     /* Usage */
     if(argc > 3){
         fprintf(stderr, "Quickstart with %s, extra parameters are discarded.\n[Usage] %s [<operation-number>]\n", argv[1], argv[0]);
     }
 
     /* Init */
+    arg = (char *)check_mem(malloc(DATASIZE*sizeof(char)), "main:malloc");
+    me = getpid();
+    //servaddr = malloc(sizeof(struct sockaddr_in));
+    memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
+    sockd = setsock(&servaddr, SERVER_ADDR, SERVER_PORT, CLIENT_TIMEOUT, 0);
+    seq = 1+rand()%99;
+    nextseqnum = 0;
     if(argc == 2){
         cmd = atoi(argv[1]);
         goto quickstart;
     }
-    arg = (char *)check_mem(malloc(DATASIZE*sizeof(char)), "main:malloc");
-    me = getpid();
-printf("Welcome to server-simple app, client #%d\n", me);
-    seq = 1+rand()%99; //prendo un numero di seq iniziale random compreso tra 1 e 99
-    nextseqnum = 0;
 
-	//inizializzo semaforo per la gestione di wsize
-	//check_mutex(pthread_mutex_init(&wsizemutex,NULL), "main:mutex_init");
+    printf("Welcome to server-simple app, client #%d\n", me);
 
 
     while (1) {
         /* Infinite parsing input */
         printf("\nAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\nChoose an operation and press ENTER: ");
 
-        fscanf(stdin, "%d", &cmd);
-        //fflush(stdin);
+        if( !fscanf(stdin, "%d", &cmd)){
+            fflush(stdin);
+            continue;
+        }
 
 quickstart:
         /* Operation selection */
         switch (cmd) {
-            case 1: // list
+
+            case SYNOP_LIST: // list
                 // ask for which path to list
-                /*if( (setop(1, seq, 0, arg)) >= 0 ){
+                if(setop2(SYNOP_LIST, 0, arg)){
 printf("[Client #%d] Looking for list of default folder...\n", me);
-                }*/
-                list();
+                    list();
+                }
                 break;
-            case 2: // get
+
+            case SYNOP_GET: // get
                 printf("Type filename to get and press ENTER: ");
                 fscanf(stdin, "%s", arg);
                 printf("[Client #%d] File selected is %s", me, arg);
                 if(get(seq, arg)){
+                  //if(setop2(SYNOP_GET, 0, arg)){
                   printf("GET conclusa\n");
                 }
                 else{
                   printf("GET: qualcosa e' andato storto\n");
                 }
                 break;
+
+            case SYNOP_PUT: // put
 put:
-            case 3: // put
                 printf("Type filename to put and press ENTER: ");
-                /*fscanf(stdin, "%s", arg);  //salvo il pathname in arg
-        				//working on parsing file (path and size)
-        				totpkt = calculate_numpkts(arg);
-        				if (totpkt == -1) { goto put;
-        				}
-        				else printf("[Client #%d] File selected is %s and it has generate %d pkt to transfer \n",me, arg, totpkt);
-                        if(put(seq, totpkt, arg)) {
-        printf("[Client #%d] Sending file %s complete with success \n", me, arg);
-                        } else {
-        printf("[Client #%d]Problem with transfer file %s to server  \n", me, arg);
-        				exit(EXIT_FAILURE);
-                        }
-                        break;*/
-            case 0: // exit
+                fscanf(stdin, "%s", arg);
+                if(calculate_numpkts(arg) < 0){
+                    printf("File not found\n");
+                    goto put;
+                }
+                if(setop2(SYNOP_PUT, filesize, arg)){
+printf("[Client #%d] Sending %s in the space...\n", me, arg);
+                }
+                break;
+
+            case SYNOP_ABORT: // exit
+            
                 fprintf(stdout, "Bye client #%d\n", me);
                 exit(EXIT_SUCCESS);
             default:
