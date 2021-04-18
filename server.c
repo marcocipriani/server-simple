@@ -46,7 +46,7 @@ int freespacebuf(int totpkt) {
     res = sizeof(rcvbuf) - totpktsize;
     if (res >= 0) {
     return 1;
-    } else {
+    }else{
     return 0;
     }
 }
@@ -82,7 +82,7 @@ printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
 printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
     // unlock buffer
         goto check_ack;
-    } else {
+    }else{
         (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
 printf("SONO IMPAZZITO \n");
 printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
@@ -91,6 +91,14 @@ printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initia
     }
 }
 
+/*
+ *  function: waitforack
+ *  ----------------------------
+ *  Wait for a positive ack
+ *
+ *  return: 1 on successfully received ack
+ *  error: 0
+ */
 int waitforack() {
     struct pkt ack;
 
@@ -102,17 +110,6 @@ printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
         return 1;
     }
     return 0;
-}
-
-void makelist(char **res, const char *path) {
-    char command[DATASIZE];
-    FILE *file;
-
-    sprintf(command, "ls %s | cat > list.txt", path);
-    system(command);
-
-    file = fopen("list.txt", "r");
-    fread(*res, DATASIZE, 1, file);
 }
 
 int get(int iseq, int iack, int numpkt, char *filename) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
@@ -129,88 +126,115 @@ int get(int iseq, int iack, int numpkt, char *filename) { // iseq=11,iack=31,num
     int init = iseq;
 
     //  setsock();
-    check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr,
-                   &len),
-          "GET-server:recvfrom ack-client");
+    check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "GET-server:recvfrom ack-client");
+
     if (strcmp(ack.data, "ok") == 0) { /* ho ricevuto ack positivo dal client */
-      printf("[SERVER] Connection established \n");
-      fd = open((char *)filename, O_RDONLY, 00700); // apertura file da inviare
-      if (fd == -1) { /*file non aperto correttamente*/
-        printf("[SERVER] Problem opening file %s \n", filename);
-        exit(EXIT_FAILURE);
-      }
-
-    transfer:
-      printf("inizio trasferimento \n");
-      sendpkt = malloc((numpkt) *
-                       sizeof(struct elab2)); /*Alloca la memoria per thread che
-                                                 eseguiranno la get */
-      if (sendpkt == NULL) {
-        printf("server: ERRORE malloc sendpkt del file %s", filename);
-        exit(EXIT_FAILURE);
-      }
-
-      counter = malloc((numpkt) * sizeof(int));
-      if (counter == NULL) {
-        printf("server: errore malloc contatore ack \n");
-        exit(EXIT_FAILURE);
-      }
-
-      tid = malloc((numpkt) * sizeof(pthread_t));
-      if (tid == NULL) {
-        printf("server: errore malloc contatore ack \n");
-        exit(EXIT_FAILURE);
-      }
-
-      for (z = 0; z < numpkt; z++) {
-        counter[z] = 0; // inizializza a 0 il counter
-      }
-
-      dati = (char *)malloc(DATASIZE);
-      for (j = 0; j < numpkt; j++) {
-        aux = readn(fd, dati, DATASIZE);
-        printf("aux %d \n", aux);
-        printf("lunghezza dati: %lu\n", strlen((char *)dati));
-
-        sendpkt[j].thpkt = makepkt(5, iseq, 0, numpkt - j, aux, dati);
-        printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j,
-               sendpkt[j].thpkt.size, sendpkt[j].thpkt.pktleft,
-               sendpkt[j].thpkt.data);
-        sendpkt[j].p = counter;
-        sendpkt[j].initialseq = init;
-        for (z = 0; z < 120; z++) {
-          printf("%c", sendpkt[j].thpkt.data[z]);
+printf("[SERVER] Connection established \n");
+        fd = open((char *)filename, O_RDONLY, 00700); // apertura file da inviare
+        if(fd == -1){ /*file non aperto correttamente*/
+printf("[SERVER] Problem opening file %s \n", filename);
+            exit(EXIT_FAILURE);
         }
 
-        if (pthread_create(&tid[j], NULL, thread_sendpkt,
-                           (void *)&sendpkt[j]) != 0) {
-          printf("server:ERRORE pthread_create GET in main");
-          exit(EXIT_FAILURE);
+transfer:
+printf("inizio trasferimento \n");
+        sendpkt = malloc((numpkt) * sizeof(struct elab2)); /*Alloca la memoria per thread che eseguiranno la get */
+        if(sendpkt == NULL){
+printf("server: ERRORE malloc sendpkt del file %s", filename);
+            exit(EXIT_FAILURE);
+      }
+
+        counter = malloc((numpkt) * sizeof(int));
+        if(counter == NULL){
+printf("server: errore malloc contatore ack \n");
+            exit(EXIT_FAILURE);
         }
-        memset(dati, 0, DATASIZE);
-        iseq++;
-      }
-      for (k = 0; k < numpkt; k++) {
-        printf("sono il padre e aspetto %d thread \n", numpkt - k);
-        pthread_join(tid[k], tstatus);
-        printf("un figlio e' morto \n");
-      }
-      printf("tutti i thread hanno finito \n");
-      // controllo che siano stati ricevuti tutti gli ACK
-      for (i = 0; i < numpkt; i++) {
-        printf("counter[%d]: %d \n", i, counter[i]);
-        if (counter[i] == 0) {
-          printf("errore nell'invio/ricezione del pkt/ack: %d \n", i);
-          return 0;
+
+        tid = malloc((numpkt) * sizeof(pthread_t));
+        if (tid == NULL) {
+printf("server: errore malloc contatore ack \n");
+            exit(EXIT_FAILURE);
         }
+
+        for (z = 0; z < numpkt; z++) {
+            counter[z] = 0; // inizializza a 0 il counter
+        }
+
+        dati = (char *)malloc(DATASIZE);
+        for (j = 0; j < numpkt; j++) {
+            aux = readn(fd, dati, DATASIZE);
+printf("aux %d \n", aux);
+printf("lunghezza dati: %lu\n", strlen((char *)dati));
+
+            sendpkt[j].thpkt = makepkt(5, iseq, 0, numpkt - j, aux, dati);
+printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].thpkt.size, sendpkt[j].thpkt.pktleft, sendpkt[j].thpkt.data);
+            sendpkt[j].p = counter;
+            sendpkt[j].initialseq = init;
+            for (z = 0; z < 120; z++) {
+printf("%c", sendpkt[j].thpkt.data[z]);
+            }
+
+            if(pthread_create(&tid[j], NULL, thread_sendpkt, (void *)&sendpkt[j]) != 0){
+printf("server:ERRORE pthread_create GET in main");
+                exit(EXIT_FAILURE);
+            }
+            memset(dati, 0, DATASIZE);
+            iseq++;
+        }
+
+        for(k = 0; k < numpkt; k++){
+printf("sono il padre e aspetto %d thread \n", numpkt - k);
+            pthread_join(tid[k], tstatus);
+            printf("un figlio e' morto \n");
       }
-      return 1;
-    } else {
-      printf("il client rifiuta il trasferimento del file/n");
-      return 0; /* ho ricevuto ack negativo dal client */
+printf("tutti i thread hanno finito \n");
+
+        // controllo che siano stati ricevuti tutti gli ACK
+        for(i = 0; i < numpkt; i++){
+printf("counter[%d]: %d \n", i, counter[i]);
+            if(counter[i] == 0){
+printf("errore nell'invio/ricezione del pkt/ack: %d \n", i);
+                return 0;
+            }
+        }
+
+        return 1;
+    }else{
+printf("il client rifiuta il trasferimento del file/n");
+        return 0; /* ho ricevuto ack negativo dal client */
     }
-  }
+}
 
+/*
+ *  function: makelist
+ *  ----------------------------
+ *  Print list on
+ *
+ *  res: pointer to string where the result is stored
+ *  path: folder to list
+ *
+ *  return: -
+ *  error: -
+ */
+void makelist(char **res, const char *path) {
+    char command[DATASIZE];
+    FILE *file;
+
+    sprintf(command, "ls %s | cat > list.txt", path);
+    system(command);
+
+    file = fopen("list.txt", "r");
+    fread(*res, DATASIZE, 1, file);
+}
+
+/*
+ *  function: managelist
+ *  ----------------------------
+ *  Execute makelist function and send the result to the client
+ *
+ *  return: -
+ *  error: -
+ */
 void managelist() {
     char *res = malloc(((DATASIZE)-1)*sizeof(char)); // client has to put \0 at the end
     char **resptr = &res;
@@ -222,6 +246,16 @@ printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
     check(sendto(sockd, &listpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)), "main:sendto");
 }
 
+/*
+ *  function: setop
+ *  ----------------------------
+ *  Serve client request
+ *
+ *  opdata: client packet and client adddress
+ *
+ *  return: 1 on successfull operation
+ *  error: 0
+ */
 int setop(struct elab opdata) {
     struct pkt synack;
     // TMP for testing 1 packet scenarios
@@ -275,13 +309,13 @@ printf("Root folder: %s\n", spath);
 
     while (1) {
         /* Infinite receiving  */
+        check_mem(memset(&cliaddr, 0, sizeof(cliaddr)), "main:memset:cliaddr");
+        check_mem(memset(&cpacket, 0, sizeof(struct pkt)), "main:memset:cpacket");
 printf("[Server] Waiting for synop...\n");
-        check_mem(memset((void *)&cliaddr, 0, sizeof(cliaddr)), "main:memset:cliaddr");
-        check_mem(memset((void *)&cpacket, 0, sizeof(struct pkt)), "main:memset:cpacket");
         check(recvfrom(sockd, &cpacket, HEADERSIZE + DATASIZE, 0, (struct sockaddr *)&cliaddr, &len), "main:rcvfrom");
 printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", cpacket.op, cpacket.seq, cpacket.ack, cpacket.pktleft, cpacket.size, cpacket.data);
 
-        check_mem(memset((void *)&epacket, 0, sizeof(struct elab)), "main:memset:epacket");
+        check_mem(memset(&epacket, 0, sizeof(struct elab)), "main:memset:epacket");
         memcpy(&epacket.cliaddr, &cliaddr, len);
         epacket.clipacket = makepkt(cpacket.op, cpacket.seq, cpacket.ack, cpacket.pktleft, cpacket.size, cpacket.data);
 printf("Creating elab [addr:?][port:%d][op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", epacket.cliaddr.sin_port, epacket.clipacket.op, epacket.clipacket.seq, epacket.clipacket.ack, epacket.clipacket.pktleft, epacket.clipacket.size, epacket.clipacket.data);
@@ -292,7 +326,7 @@ printf("Creating elab [addr:?][port:%d][op:%d][seq:%d][ack:%d][pktleft:%d][size:
             case SYNOP_LIST: // list
                 if (setop(epacket)) {
 printf("Operation cmd:%d seq:%d status:completed successfully\n\n", epacket.clipacket.op, epacket.clipacket.seq);
-                } else {
+                }else{
 printf("Operation cmd:%d seq:%d status:completed unsuccessfully\n\n", epacket.clipacket.op, epacket.clipacket.seq);
                 }
                 break;
@@ -309,13 +343,13 @@ printf("Operation cmd:%d seq:%d status:completed unsuccessfully\n\n", epacket.cl
                 if (filesize == -1) {
                     sack = makepkt(4, nextseqnum, cpacket.seq, 0, 22, "GET: File non presente");
                     sendack2(sockd, sack);
-                } else {
+                }else{
                 printf("[SERVER] File selected is %s and it has generate %d pkt to transfer \n", filename, filesize);
                 sack = makepkt(4, nextseqnum, cpacket.seq, filesize, 2, "ok");
                 sendack2(sockd, sack);
                 if (get(nextseqnum, cpacket.seq, filesize, filename)) {
                     printf("[SERVER] Sending file %s complete with success \n", filename);
-                  } else {
+                  }else{
                       printf("[SERVER]Problem with transfer file %s to server  \n", filename);
                       exit(EXIT_FAILURE);
                   }

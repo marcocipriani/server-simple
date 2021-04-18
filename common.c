@@ -28,6 +28,7 @@ struct pkt{
     char data[DATASIZE]; // synop: arg, ack:operationstatus (0 ok 1 denied 2 trylater) empty for ack
 };
 
+// TMP
 struct elab{
     struct sockaddr_in cliaddr;
     struct pkt clipacket;
@@ -39,6 +40,21 @@ struct elab2{
     struct pkt thpkt;
 };
 
+/*
+ *  function: makepkt
+ *  ----------------------------
+ *  Create a packet to send
+ *
+ *  op: SYNOP_ABORT, SYNOP_LIST, SYNOP_GET, SYNOP_PUT, ACK_POS, ACK_NEG, CARGO
+ *  seq: sequence number
+ *  ack: sequence number of an acknowledged packet
+ *  pktleft: how many cargo packets the operation should use
+ *  size: length of data field
+ *  data: payload
+ *
+ *  return: a packet with parameters
+ *  error:
+ */
 struct pkt makepkt(int op, int seq, int ack, int pktleft, size_t size, void *data){
     struct pkt packet;
 
@@ -52,9 +68,19 @@ struct pkt makepkt(int op, int seq, int ack, int pktleft, size_t size, void *dat
     return packet;
 }
 
+/*
+ *  function: calculate_filelength
+ *  ----------------------------
+ *  Calculate the length of a specified file
+ *
+ *  pathname: file to inspect
+ *
+ *  return: length of the file
+ *  error: -1
+ */
 int calculate_filelength(char *pathname){
     struct stat finfo;
-    int filelength = -1;
+    int filelength = -1; // TODO size_t/ssize_t
 
     if(stat(pathname, &finfo) == 0){
         filelength = finfo.st_size;
@@ -63,6 +89,16 @@ int calculate_filelength(char *pathname){
     return filelength;
 }
 
+/*
+ *  function: calculate_numpkts
+ *  ----------------------------
+ *  Calculate how many packets are needed for a file
+ *
+ *  pathname: file to inspect
+ *
+ *  return: quantity of the packets the file is made of
+ *  error: -1
+ */
 int calculate_numpkts(char *pathname){
     int numpkts = -1;
 
@@ -75,6 +111,16 @@ int calculate_numpkts(char *pathname){
     return numpkts;
 }
 
+/*
+ *  function: check
+ *  ----------------------------
+ *  Evaluate a function with integer return
+ *
+ *  exp: variable or function to evaluate
+ *
+ *  return: exp without touching it
+ *  error: exit
+ */
 int check(int exp, const char *msg){
     if(exp < 0){
         perror(msg);
@@ -84,6 +130,16 @@ int check(int exp, const char *msg){
     return exp;
 }
 
+/*
+ *  function: check_mem
+ *  ----------------------------
+ *  Evaluate a function with pointer return, same as check above
+ *
+ *  mem: memory area to
+ *
+ *  return: exp without touching it
+ *  error: exit
+ */
 void *check_mem(void *mem, const char *msg){
     if(mem == NULL){
         perror(msg);
@@ -108,7 +164,7 @@ ssize_t readn(int fd, void *vptr, size_t n) {
             else
                return (-1);
         } else if(nread == 0) // EOF
-            break; // EOF
+            break;
 
         nleft -= nread;
         ptr += nread;
@@ -138,7 +194,21 @@ ssize_t readn(int fd, void *vptr, size_t n) {
      return (n);    /* byte ancora da scrivere*/
  }
 
-int setsock(struct sockaddr_in *addr, char *address, int port, int seconds, int isServer){
+ /*
+  *  function: setsock
+  *  ----------------------------
+  *  Create a socket with defined address (even for server purpose) and timeout
+  *
+  *  addr: pointer to address to fill
+  *  address: address of the host to contact
+  *  port: port of the host to contact
+  *  seconds: time for timeout
+  *  is_server: flag useful for server purpose (address = ANY and bind on a defined port)
+  *
+  *  return: descriptor of a new socket
+  *  error: 0
+  */
+int setsock(struct sockaddr_in *addr, char *address, int port, int seconds, int is_server){
     int sockd;
     struct timeval tout;
 
@@ -148,12 +218,12 @@ int setsock(struct sockaddr_in *addr, char *address, int port, int seconds, int 
     addr->sin_family = AF_INET;
     addr->sin_port = htons(port);
 
-    if(isServer){
+    if(is_server){
         addr->sin_addr.s_addr = htonl(INADDR_ANY);
 
         check(bind(sockd, (struct sockaddr *)addr, sizeof(struct sockaddr)), "setsock:bind");
 printf("[Server] Ready to accept on port %d (sockd = %d)\n\n", port, sockd);
-    } else {
+    }else{
         check(inet_pton(AF_INET, address, &addr->sin_addr), "setsock:inet_pton");
 printf("[Client] Ready to contact %s at %d.\n", address, port);
     }

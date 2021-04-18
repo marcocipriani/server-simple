@@ -26,6 +26,18 @@ void setsock2(){
 printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
 }
 
+/*
+ *  function: setop
+ *  ----------------------------
+ *  Check operation validity with server
+ *
+ *  cmd: SYNOP_ABORT, SYNOP_LIST, SYNOP_GET, SYNOP_PUT
+ *  pktleft: (only for put) how many packets the file is made of
+ *  arg: (list) not-used (get) name of the file to get (put) name of the file to put
+ *
+ *  return: quantity of packets the operation should use
+ *  error: 0
+ */
 int setop(int cmd, int pktleft, void *arg){ // int ownseq required?
     struct pkt synop, ack, synack;
     char *status = malloc((DATASIZE)*sizeof(char));
@@ -47,7 +59,7 @@ printf("Operation %d #%d permitted [estimated packets: %d]\nContinue? [Y/n] ", s
         if(getchar()=='n'){
             status = "noserver";
             cmd = ACK_NEG;
-        } else {
+        }else{
             cmd = ACK_POS;
             status = "okserver";
         }
@@ -68,6 +80,20 @@ printf("Operation %d #%d not permitted\n", synop.op, synop.seq);
     return 0;
 }
 
+/*
+ *  function: sendack
+ *  ----------------------------
+ *  Send a ack packet
+ *
+ *  sockd: socket descriptor used for sending
+ *  op: flag for postive or negative status ack
+ *  cliseq: sequence number of the packet to acknowledge
+ *  pktleft: // TODO ?
+ *  status: verbose description of the ack
+ *
+ *  return: -
+ *  error: -
+ */
 void sendack(int sockd, int op, int cliseq, int pktleft, char *status){
     struct pkt ack;
 
@@ -92,11 +118,19 @@ int freespacebuf(int totpkt){
 	res = sizeof(rcvbuf)-totpktsize;
 	if (res >=0){
 	       return 1;
-    } else {
+    }else{
         return 0;
     }
 }
 
+/*
+ *  function: list
+ *  ----------------------------
+ *  Receive and print list sent by the server
+ *
+ *  return: -
+ *  error: -
+ */
 void list(){
     int n;
     struct pkt listpkt;
@@ -110,7 +144,7 @@ printf("[Client #%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%
             //buffer[n] = '\0';
             fprintf(stdout, "%s", listpkt.data);
             write(fd, listpkt.data, listpkt.size);
-    } else {
+    }else{
         printf("No available files on server\n");
         write(fd, "No available files on server\n", 30);
     }
@@ -158,7 +192,7 @@ printf("numero sequenza pacchetto ricevuto fuori range \n");
                 sack=makepkt(ACK_POS, iseq, cargo.seq, 0, 2, "ok");
                 sendack2(sockd, sack);
 printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
-            } else {
+            }else{
                 sack=makepkt(ACK_POS, iseq, cargo.seq, 0, 2, "ok");
                 sendack2(sockd, sack);
                 goto receiver; // il pacchetto viene scartato
@@ -174,7 +208,7 @@ printf("filesize: %ld \n",filesize);
         writen(fd,rcvbuf,filesize);
 printf("il file %s e' stato correttamente scaricato\n",(char *)pathname); //UTOPIA
         return 1;
-    } else {
+    }else{
         printf("non ho trovato spazio libero nel buff \n");
         sack=makepkt(4, iseq, initseqserver, 0, 16, "Full_Client_Buff");
         sendack2(sockd, sack); //ack negativo
@@ -195,7 +229,7 @@ printf("[Client #%d] Received cargo from server [op:%d][seq:%d][ack:%d][pktleft:
     if(n > 0){
             write(fd, getpkt.data, getpkt.size);
             sendack(sockd, ACK_POS, getpkt.seq, 0, "okclient");
-    } else {
+    }else{
         printf("Nothing from server\n");
             sendack(sockd, ACK_NEG, getpkt.seq, 0, "okserver");
     }
