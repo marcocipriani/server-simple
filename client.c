@@ -1,4 +1,4 @@
-#include "config.h"
+#include "macro.h"
 #include "common.c"
 
 int me;

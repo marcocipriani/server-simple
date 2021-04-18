@@ -15,10 +15,10 @@
 //#include <ctype.h>
 //#include <sys/mman.h>
 
-#include "config.h"
+#include "macro.h"
 
 struct pkt{
-    int op; // op codes in config.h
+    int op; // op codes in macro.h
     int seq;
     int ack;
     int pktleft;

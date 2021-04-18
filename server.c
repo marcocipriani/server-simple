@@ -1,5 +1,5 @@
 #include "common.c"
-#include "config.h"
+#include "macro.h"
 
 int sockd; // global until setop calls for setsock
 struct sockaddr_in servaddr, cliaddr;
