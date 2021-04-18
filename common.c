@@ -11,14 +11,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <pthread.h>
 //#include <ctype.h>
 //#include <sys/mman.h>
-#include <pthread.h>
-
 
 #include "config.h"
-
-
 
 struct pkt{
     int op; // op codes in config.h
@@ -42,25 +39,24 @@ struct elab2{
     struct pkt thpkt;
 };
 
-struct pkt makepkt(int op, int seq, int ack, int pktleft, void *data, size_t n){
+struct pkt makepkt(int op, int seq, int ack, int pktleft, size_t size, void *data){
     struct pkt packet;
 
     packet.op = op;
     packet.seq = seq;
     packet.ack = ack;
     packet.pktleft = pktleft;
-    packet.size = n; 
-    memcpy(&packet.data, data, n);
+    packet.size = size;
+    memcpy(&packet.data, data, size);
 
     return packet;
 }
 
-
 int calculate_filelength(char *pathname){
     struct stat finfo;
-    int filelength = 0;
+    int filelength = -1;
 
-    if( stat(pathname, &finfo) == 0){
+    if(stat(pathname, &finfo) == 0){
         filelength = finfo.st_size;
     }
 
@@ -68,17 +64,16 @@ int calculate_filelength(char *pathname){
 }
 
 int calculate_numpkts(char *pathname){
-    struct stat finfo;
     int numpkts = -1;
 
     int filelength = calculate_filelength(pathname);
-
-    numpkts = filelength / (DATASIZE);
-    if((filelength % (DATASIZE)) != 0 || numpkts == 0) ++numpkts;
+    if(filelength != -1){
+        numpkts = filelength / (DATASIZE);
+        if((filelength % (DATASIZE)) != 0 || numpkts == 0) ++numpkts;
+    }
 
     return numpkts;
 }
-
 
 int check(int exp, const char *msg){
     if(exp < 0){
@@ -89,7 +84,7 @@ int check(int exp, const char *msg){
     return exp;
 }
 
-void* check_mem(void *mem, const char *msg){
+void *check_mem(void *mem, const char *msg){
     if(mem == NULL){
         perror(msg);
         fprintf(stderr, "Error code %d\n", errno);
@@ -98,31 +93,33 @@ void* check_mem(void *mem, const char *msg){
     return mem;
 }
 
+/* Read "n" bytes from a descriptor. */
+ssize_t readn(int fd, void *vptr, size_t n) {
+    size_t nleft;
+    ssize_t nread;
+    char *ptr;
 
-ssize_t readn(int fd, void *vptr, size_t n) {/* Read "n" bytes from a descriptor. */
-   size_t  nleft;
-   ssize_t nread;
-   char   *ptr;
-
-   ptr = vptr;
-   nleft = n;
-   while (nleft > 0) {
-       if ( (nread = read(fd, ptr, nleft)) < 0) {
-           if (errno == EINTR)
-               nread = 0;      /* and call read() again */
-           else
+    ptr = vptr;
+    nleft = n;
+    while (nleft > 0) {
+        if ((nread = read(fd, ptr, nleft)) < 0){ // ERROR
+            if (errno == EINTR)
+                nread = 0;
+            else
                return (-1);
-       } else if (nread == 0)
-           break;              /* EOF */
+        } else if(nread == 0) // EOF
+            break; // EOF
 
-       nleft -= nread;
-       ptr += nread;
-       //ALERT :if((int)nread<(int)n) break;	/* Se leggi di meno non bloccare ed esci dal ciclo*/
-   }
-   return (n - nleft);         /* return byte letti */
- }
+        nleft -= nread;
+        ptr += nread;
+        //ALERT :if((int)nread<(int)n) break;
+        /* Se leggi di meno non bloccare ed esci dal ciclo*/
+    }
+    return (n - nleft);
+}
 
- ssize_t writen(int fd, const void *vptr, size_t n){  /* Write "n" bytes to a descriptor. */
+/* Write "n" bytes to a descriptor. */
+ ssize_t writen(int fd, const void *vptr, size_t n){
      size_t nleft;
      ssize_t nwritten;
      const char *ptr;
@@ -167,4 +164,3 @@ printf("[Client] Ready to contact %s at %d.\n", address, port);
 
     return sockd;
 }
-
