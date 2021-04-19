@@ -43,117 +43,69 @@ void get(struct pkt *reqdata){
 }
 
 void list(char** res, const char* path ,void * address){
-    /*char command[DATASIZE];
-    FILE* file;
 
-    sprintf(command, "ls %s | cat > list.txt", path);
-    system(command);
+    DIR *dp = NULL;
+    struct dirent *dptr = NULL;
+    FILE *file;
+    int n_entry;
+    char buff[128];
+    char buffer[128];
 
-    file = fopen("list.txt", "r");
-    fread(*res, DATASIZE, 1, file);*/
+    //PRENDO IL LOCK IL MUTEX
+    if(pthread_mutex_lock(&mtx) != 0)
+          exit_on_error("server:pthread_mutex_lock");
 
-      /* percorso della directory locale che contiene i files condivisi
-      in questo caso uso la cartella del progetto*/
-    	char *dirname = {"/home/fabio/Scrivania/progetto/server-simple"};
-      char fl[20] = {"filelist.txt"};
-      char buff[DATASIZE];
-      char command[DATASIZE];
-      FILE* file;
-    	DIR * direc;
-    	int fdir;
-      int fdl;
-      int n_entry,i;
+    // setto il buffer
+    memset(buff,0,sizeof(buff));  //to 0
 
-    	struct dirent **filelist;
-    	struct stat data;
+    //copio nel buffer il path dato in input ( nel caso del progetto viene da pacchetto)
+    strcpy(buff,path);
 
-    	//stampo a schermo il contenuto del path
-      sprintf(command, "ls %s | cat > list.txt", path);
-      system(command);
+    // Stream della directory SE C'È ERRORE -> NULL
+    if((dp = opendir(path) == NULL ){
+        printf("\n Errore nell'apertura della directory[%s]\n",path);
+        exit(1);
+    }
+    else
+    {
+        printf("\n Il contenuto della directory [%s]\n",path);
+        // Leggo il contenuto della directory
+        while(NULL != (dptr = readdir(dp)) )
+        { /*
+          //ORDINAMENTO ALFABETICO DA SISTEMARE
+          if((n_entry =scandir(path,&(dptr),NULL,alphasort)) < 0){
+            printf("server-list:scandir\n");
+            exit(-1);
+          }*/
 
+          sprintf(buffer, "ls %s | cat > list.txt", path);
+          system(buffer);
 
-      /*  collegamento alla socket
-      /* Alloca la memoria per memorizzare l'indirizzo del client
-    	socklen_t len = (socklen_t) sizeof(struct sockaddr_in);
-    	struct sockaddr_in *cliaddr = malloc(len);
+          file = fopen("list.txt", "w");
+          fwrite(dptr->d_name,DATASIZE,1,file);
+        }
 
-    	if(cliaddr == NULL){
-        exit_on_error("server: malloc cliaddr in list",errno);
-      }
-
-      /*Memorizza la struttura contenente l'indirizzo del client
-    	memcpy(cliaddr,address,len);
-      */
-
-
-    	/*Apri un directory stream*/
-
-    	if ( (direc = opendir(dirname)) == NULL) {
-    		//errore
-    		exit(EXIT_FAILURE);
-    	}
-
-    	// basterebbe usare chdir(dirname path)
-    	fdir = dirfd(direc);
-    	fchdir(fdir);	 /*Per posizionarsi sulla directory interessata*/
-
-     /*leggi il contenuto della directory,
-     ordina in oridine alfabetico tutte le voci e salva l'indirizzo della lista ordinata in filelist*/
-
-    	check(n_entry =scandir(dirname,&filelist,NULL,alphasort)) < 0), "server-list:scandir");
-    /*Prendo il lock su mtx per per scrivere la filelist in modo atomico */
-
-    	check( pthread_mutex_lock(&mtx) != 0), "server-list:pthread_mutex_lock");
-
-     /*Crea un file che contiene la filelist*/
-
-    	if ((fdl = open("/home/fabio/Scrivania/progetto/server-simple/list.txt",O_CREAT | O_RDWR | O_TRUNC,0644)) == -1){
-        //errore
-      }
-
-    /*Scrivi la filelist*/
-
-    	check(snprintf(buff,DATASIZE,"%80s\n\n", "FILELIST")<0),"server-list:snprintf" );
-
-    	check(writen(fdl,buff,strlen(buff))<0),"server-list:errore nella scrittura su file writen");
-
-    	check(snprintf(buff,DATASIZE,"\n%-60s%50s\n\n", "Name", "Dimension(byte)")<0),"server-list :snprintf";
-
-    	check(writen(fdl,buff,strlen(buff))<0), "server:errore nella scrittura su file writen");
-
-    	for(i=0;i<n_entry;i++){
-              /*azzera data  -> void *memset(void *s, int c, size_t n);*/
-          		check_mem(memset((void *)&data, 0, sizeof(data)),"server-list: memset");;
-
-               /* stat Mi serve per ottenere le informazioni di ciascuna voce
-               LA FUNZIONE -> int stat(const char *pathname, struct stat *statbuf); */
-              if((stat(filelist[i]->d_name,&data)) ==-1)
-          			//controllo errore;
-
-              /*azzera il buffer*/
-          		check_mem(memset((void *)buff, 0, DATASIZE),"server-list: memset");
-
-              /*Scrive la dimensione delle voci*/
-          		check(snprintf(buff,DATASIZE,"\n%-60s%50lld\n\n", (filelist[i])->d_name,(long long)data.st_size)<0),"server:snprintf");
-
-              /*Scrivi via via le voci su file*/
-          		check(writen(fdl,buff,strlen(buff))<0), "server:errore nella scrittura su file");
+        // Chiudo lo stream-diretory
+        if(closedir(dp) == -1)
+          printf("server:closedir");
+          exit(-1);
      }
-     /*Dealloca il vettore di strutture dirent*/
-    	while(--i > 0)
-    		free(filelist[i]);
-    	free(filelist);
-      /* Chiudi il directory stream*/
-    	if(closedir(direc) == -1)
-    		//controllo errore
+    /*Dealloca il vettore di strutture dirent*/
+    free(dptr);
 
-    /*Unlock del mutex*/
+    //RILASCIO IL MUTEX
+    if(pthread_mutex_unlock(&mtx) != 0)
+          exit_on_error("server:pthread_mutex_unlock");
 
-    	check(pthread_mutex_unlock(&mtx) != 0),"server-list:pthread_mutex_lock");
+
+    //ORA DEVO INVIARE RITORNARE IL "FILE" CONTENENTE
+    //IL CONTENUTO DELLA DIRECTORY (PATH).
+    //NEL MAIN L'INVIO DEL PACCHETTO È
+    //SOLO DI char *res ( PACCHETTO SINGOLO)
+    //deve inviare list.txt
+    //...TO BE CONTINUED
 
 }
-
-
 
 
 int main(int argc, char const* argv[]) {
@@ -175,6 +127,11 @@ printf("[Server] Root folder: %s\n", spath);
     setsock();
     cpacket = (struct pkt *)check_mem(malloc(sizeof(struct pkt)), "main:malloc:cpacket");
     len = sizeof(cliaddr);
+
+    if (pthread_mutex_init(&mtx,NULL) != 0) {
+      printf("Errore nella pthread_mutex_init \n");
+      exit(-1);
+    }
 
     // TMP for testing list - contenuto di list
     res = malloc((DATASIZE-1) * sizeof(char)); // client has to put \0 at the end
@@ -199,12 +156,12 @@ printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\
 
                 // TMP for testing list
                 list(resptr, spath, address);
-                sendack(sockd, cpacket->seq, /*listsize*/ 1, status);
+                sendack(sockd, cpacket->seq,1, status);
 
 printf("[Server] Sending list to client #%d...\n\n", cliaddr.sin_port);
                 nextseqnum++;
                 //pktlist = (struct pkt *)malloc(sizeof(struct pkt ));
-                pktlist = makepkt(5,nextseqnum,1,1/*deve essere pacchetto residuo pktleft*/,res);
+                pktlist = makepkt(5,nextseqnum,1,1/*deve essere pacchetto residuo pktleft*/,res/*dovrebbe essere filelist.txt*/);
                 printf("ECCO LA LIST:\n%s\n",pktlist->data);
                 sendto(sockd, pktlist,DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
 //fine list
