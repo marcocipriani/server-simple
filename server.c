@@ -12,7 +12,7 @@ char *status = "okclient";
 char *spath = SERVER_FOLDER; // root folder for server
 
 // setsock1() in common.c
-void setsock2() {
+/*void setsock2() {
     check(sockd = socket(AF_INET, SOCK_DGRAM, 0), "setsock:socket");
 
     check_mem(memset((void *)&servaddr, 0, sizeof(servaddr)), "setsock:memset");
@@ -21,7 +21,7 @@ void setsock2() {
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
     check(bind(sockd, (struct sockaddr *)&servaddr, sizeof(servaddr)), "setsock:bind");
 printf("[Server] Ready to accept on port %d\n\n", SERVER_PORT);
-}
+}*/
 
 void sendack(int sockd, int op, int cliseq, int pktleft, char *status) {
     struct pkt ack;
@@ -125,12 +125,16 @@ int get(int iseq, int iack, int numpkt, char *filename) { // iseq=11,iack=31,num
     char *dati;
     int init = iseq;
 
+
+
     //  setsock();
     check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "GET-server:recvfrom ack-client");
-
+printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, ack.data);
     if (strcmp(ack.data, "ok") == 0) { /* ho ricevuto ack positivo dal client */
 printf("[SERVER] Connection established \n");
-        fd = open((char *)filename, O_RDONLY, 00700); // apertura file da inviare
+        
+
+        fd = open(filename, O_RDONLY, 00700); // apertura file da inviare
         if(fd == -1){ /*file non aperto correttamente*/
 printf("[SERVER] Problem opening file %s \n", filename);
             exit(EXIT_FAILURE);
@@ -200,7 +204,7 @@ printf("errore nell'invio/ricezione del pkt/ack: %d \n", i);
 
         return 1;
     }else{
-printf("il client rifiuta il trasferimento del file/n");
+printf("il client rifiuta il trasferimento del file\n");
         return 0; /* ho ricevuto ack negativo dal client */
     }
 }
@@ -284,7 +288,7 @@ int main(int argc, char const *argv[]) {
     struct pkt cpacket, sack;
     struct elab epacket;
     char *spath = DEFAULT_PATH; // root folder for server
-    char *filename;
+    char *filename, *localpathname;
 
     /* Usage */
     if (argc > 2) {
@@ -295,8 +299,10 @@ int main(int argc, char const *argv[]) {
     if (argc > 1) spath = (char *)argv[1];
 printf("Root folder: %s\n", spath);
     nextseqnum = 1;
-    setsock2();
+    //setsock2();
     memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
+    sockd = setsock(&servaddr, SERVER_ADDR, SERVER_PORT, SERVER_TIMEOUT, 1);
+
     //sockd = setsock(&servaddr, NULL, SERVER_PORT, 0, 1);
     len = sizeof(struct sockaddr_in);
 
@@ -320,6 +326,7 @@ printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\
         epacket.clipacket = makepkt(cpacket.op, cpacket.seq, cpacket.ack, cpacket.pktleft, cpacket.size, cpacket.data);
 printf("Creating elab [addr:?][port:%d][op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", epacket.cliaddr.sin_port, epacket.clipacket.op, epacket.clipacket.seq, epacket.clipacket.ack, epacket.clipacket.pktleft, epacket.clipacket.size, epacket.clipacket.data);
 
+	
         /* Operation selection */
         switch (cpacket.op) {
 
@@ -333,21 +340,23 @@ printf("Operation cmd:%d seq:%d status:completed unsuccessfully\n\n", epacket.cl
 
             case SYNOP_GET: // get
                 // calculate the size of the arg file
-                filename = malloc((cpacket.size) * sizeof(char));
+                filename=malloc(cpacket.size*(sizeof(char)));
                 printf("filename: %s \n", filename);
                 printf("filename: %s \n", cpacket.data);
                 printf("lunghezza filename: %d \n", cpacket.size);
                 strncpy(filename, cpacket.data, cpacket.size); // salvo il filename del file richiesto
                 printf("filename copiato: %s \n", filename);
-                filesize = calculate_numpkts(filename);
+                localpathname = malloc(DATASIZE * sizeof(char));
+        	sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
+                filesize = calculate_numpkts(localpathname);
                 if (filesize == -1) {
-                    sack = makepkt(4, nextseqnum, cpacket.seq, 0, 22, "GET: File non presente");
-                    sendack2(sockd, sack);
+                    //sack = makepkt(4, nextseqnum, cpacket.seq, 0, 22, "GET: File non presente");
+                    sendack(sockd, ACK_NEG, cpacket.seq, 0, "GET: File non presente");
                 }else{
                 printf("[SERVER] File selected is %s and it has generate %d pkt to transfer \n", filename, filesize);
-                sack = makepkt(4, nextseqnum, cpacket.seq, filesize, 2, "ok");
-                sendack2(sockd, sack);
-                if (get(nextseqnum, cpacket.seq, filesize, filename)) {
+                //sack = makepkt(4, nextseqnum, cpacket.seq, filesize, 2, "ok");
+                sendack(sockd, ACK_POS, cpacket.seq, filesize, "ok");
+                if (get(nextseqnum, cpacket.seq, filesize, localpathname)) {
                     printf("[SERVER] Sending file %s complete with success \n", filename);
                   }else{
                       printf("[SERVER]Problem with transfer file %s to server  \n", filename);

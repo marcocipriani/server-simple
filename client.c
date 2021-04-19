@@ -5,11 +5,11 @@ int me;
 int sockd;
 struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
-int nextseqnum;
+int nextseqnum,initseqserver;
 char rcvbuf[45000];
 
 // setsock1() in common.c
-void setsock2(){
+/*void setsock2(){
     struct timeval tout;
 
     sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
@@ -24,7 +24,7 @@ void setsock2(){
     check(setsockopt(sockd,SOL_SOCKET,SO_RCVTIMEO,&tout,sizeof(tout)), "setsock:setsockopt");
 
 printf("[Client #%d] Ready to contact %s at %d.\n", me, SERVER_ADDR, SERVER_PORT);
-}
+}*/
 
 /*
  *  function: setop
@@ -53,6 +53,8 @@ printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIE
     check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
 printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
+    initseqserver = ack.seq;
+
     if(ack.op == ACK_POS){
 printf("Operation %d #%d permitted [estimated packets: %d]\nContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
         fflush(stdin);
@@ -61,11 +63,11 @@ printf("Operation %d #%d permitted [estimated packets: %d]\nContinue? [Y/n] ", s
             cmd = ACK_NEG;
         }else{
             cmd = ACK_POS;
-            status = "okserver";
+            status = "ok";
         }
 
         nextseqnum++;
-        synack = makepkt(cmd, nextseqnum, 0, pktleft, strlen(status), status);
+        synack = makepkt(cmd, nextseqnum, 0, ack.pktleft, strlen(status), status);
 printf("[Client #%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, (char *)synack.data);
         check(sendto(sockd, &synack, synack.size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
 
@@ -87,28 +89,28 @@ printf("Operation %d #%d not permitted\n", synop.op, synop.seq);
  *
  *  sockd: socket descriptor used for sending
  *  op: flag for postive or negative status ack
- *  cliseq: sequence number of the packet to acknowledge
+ *  serseq: sequence number of the packet to acknowledge
  *  pktleft: // TODO ?
  *  status: verbose description of the ack
  *
  *  return: -
  *  error: -
  */
-void sendack(int sockd, int op, int cliseq, int pktleft, char *status){
+void sendack(int sockd, int op, int serseq, int pktleft, char *status){
     struct pkt ack;
 
     nextseqnum++;
-    ack = makepkt(op, nextseqnum, cliseq, pktleft, strlen(status), status);
+    ack = makepkt(op, nextseqnum, serseq, pktleft, strlen(status), status);
 
     check(sendto(sockd, &ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)), ":sendto");
 printf("[Client #%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 }
 
-void sendack2(int sockd, struct pkt ack){ //ownseq for pkt seq of process, ack = ownseq of other process
+/*void sendack2(int sockd, struct pkt ack){ //ownseq for pkt seq of process, ack = ownseq of other process
 
     check(sendto(sockd,&ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) , "sendack:sendto");
 printf("[Client #%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-}
+}*/
 
 int freespacebuf(int totpkt){
 	size_t totpktsize;
@@ -157,20 +159,22 @@ int get(int iseq, void *pathname, int pktleft){
     int npkt,edgepkt;
     int pos,lastpktsize,initseqserver;
     //char *tmpbuff[];
+    char *localpathname;
     struct pkt rack, sack, cargo;
 
-    //setsock2();
     //rack = setop(2, iseq, 0, pathname); /* ricevo da setop #pkt da ricevere */
+    localpathname = malloc(DATASIZE * sizeof(char));
+    sprintf(localpathname, "%s%s", CLIENT_FOLDER, pathname);
+    printf("local %s\n",localpathname);
 
     npkt = pktleft;
     edgepkt=npkt; /*porcata per tenere a mente #pkt totali del file da ricevere SOL: do + while!!!*/
-
-    initseqserver = rack.seq;
-    iseq++; //un pacchetto lo ha già inviato nella semop con numero di seq = iseq
+//void sendack(int sockd, int op, int serseq, int pktleft, char *status)
+    //initseqserver = rack.seq;
     //controllo su buffer CLIENT
     if(freespacebuf(npkt)){
-        sack = makepkt(ACK_POS, iseq, initseqserver, 0, 2, "ok");
-        sendack2(sockd, sack);
+      //  sack = makepkt(ACK_POS, iseq, initseqserver, 0, 2, "ok");
+        //sendack(sockd, ACK_POS, initseqserver, pktleft, "ok");
 
 receiver:
         while(npkt>0){
@@ -189,12 +193,12 @@ printf("numero sequenza pacchetto ricevuto fuori range \n");
                     lastpktsize = cargo.size;
                 }
                 memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
-                sack=makepkt(ACK_POS, iseq, cargo.seq, 0, 2, "ok");
-                sendack2(sockd, sack);
+                //sack=makepkt(ACK_POS, iseq, cargo.seq, 0, 2, "ok");
+                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
 printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
             }else{
-                sack=makepkt(ACK_POS, iseq, cargo.seq, 0, 2, "ok");
-                sendack2(sockd, sack);
+                //sack=makepkt(ACK_POS, iseq, cargo.seq, 0, 2, "ok");
+                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
                 goto receiver; // il pacchetto viene scartato
             }
             npkt--;
@@ -204,20 +208,20 @@ printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos)
 printf("(edgepkt-1): %d \n",(edgepkt-1));
 printf("lastpktsize: %d \n",lastpktsize);
 printf("filesize: %ld \n",filesize);
-        fd = open("tumadre",O_RDWR|O_TRUNC|O_CREAT,0666);
+        fd = open(localpathname,O_RDWR|O_TRUNC|O_CREAT,0666);
         writen(fd,rcvbuf,filesize);
 printf("il file %s e' stato correttamente scaricato\n",(char *)pathname); //UTOPIA
         return 1;
     }else{
         printf("non ho trovato spazio libero nel buff \n");
-        sack=makepkt(4, iseq, initseqserver, 0, 16, "Full_Client_Buff");
-        sendack2(sockd, sack); //ack negativo
+        //sack=makepkt(4, iseq, initseqserver, 0, 16, "Full_Client_Buff");
+        sendack(sockd, ACK_NEG, initseqserver, pktleft, "Full_Client_Buff"); //ack negativo
         return 0;
     }
 }
 
 // TODEL
-void get2(char *filename){
+/*void get2(char *filename){
     int n;
     struct pkt getpkt;
     char *localpathname = malloc(DATASIZE * sizeof(char));
@@ -233,7 +237,7 @@ printf("[Client #%d] Received cargo from server [op:%d][seq:%d][ack:%d][pktleft:
         printf("Nothing from server\n");
             sendack(sockd, ACK_NEG, getpkt.seq, 0, "okserver");
     }
-}
+}*/
 
 int main(int argc, char const *argv[]) {
     int cmd;
