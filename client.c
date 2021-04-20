@@ -9,63 +9,6 @@ int nextseqnum,initseqserver;
 void **tstatus;
 char rcvbuf[45000];
 
-
-/*
- *  function: setop
- *  ----------------------------
- *  Check operation validity with server
- *
- *  cmd: SYNOP_ABORT, SYNOP_LIST, SYNOP_GET, SYNOP_PUT
- *  pktleft: (only for put) how many packets the file is made of
- *  arg: (list) not-used (get) name of the file to get (put) name of the file to put
- *
- *  return: quantity of packets the operation should use
- *  error: 0
- */
-int setop(int cmd, int pktleft, void *arg){
-    struct pkt synop, ack, synack;
-    char *status = malloc((DATASIZE)*sizeof(char));
-    me = getpid(); // different me for threads doing setop
-
-    nextseqnum++;
-    synop = makepkt(cmd, nextseqnum, 0, pktleft, strlen((char *)arg), arg);
-
-printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
-    check(sendto(sockd, &synop, (HEADERSIZE) + synop.size, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
-
-printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
-    check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
-printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-
-    initseqserver = ack.seq;
-
-    if(ack.op == ACK_POS){
-printf("Operation %d #%d permitted [estimated packets: %d]\nContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
-        fflush_stdin();
-        if(getchar()=='n'){
-            status = "noserver";
-            cmd = ACK_NEG;
-        }else{
-            cmd = ACK_POS;
-            status = "ok";
-        }
-
-        nextseqnum++;
-        synack = makepkt(cmd, nextseqnum, 0, ack.pktleft, strlen(status), status);
-printf("[Client #%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, (char *)synack.data);
-        check(sendto(sockd, &synack, synack.size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
-
-        if(cmd == ACK_NEG){
-printf("Aborting operation...\n");
-            return 0;
-        }
-        return ack.pktleft;
-    }
-
-printf("Operation %d #%d not permitted\n", synop.op, synop.seq);
-    return 0;
-}
-
 /*
  *  function: sendack
  *  ----------------------------
@@ -111,34 +54,7 @@ int freespacebuf(int totpkt){
     }
 }
 
-/*
- *  function: list
- *  ----------------------------
- *  Receive and print list sent by the server
- *
- *  return: -
- *  error: -
- */
-void list(){
-    int n;
-    struct pkt listpkt;
-    int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
-
-    n = recvfrom(sockd, &listpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len);
-printf("[Client #%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
-
-    if(n > 0){
-        printf("Available files on server:\n");
-            //buffer[n] = '\0';
-            fprintf(stdout, "%s", listpkt.data);
-            write(fd, listpkt.data, listpkt.size);
-    }else{
-        printf("No available files on server\n");
-        write(fd, "No available files on server\n", 30);
-    }
-}
-
-void *thread_sendpkt(void *arg) {
+void *thread_sendpkt(void *arg){
     struct elab2 *cargo;
     struct pkt sndpkt, rcvack;
     int me;
@@ -177,7 +93,92 @@ printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initia
     }
 }
 
-int put(int iseq, int numpkt, char *filename) {
+/*
+ *  function: list
+ *  ----------------------------
+ *  Receive and print list sent by the server
+ *
+ *  return: -
+ *  error: -
+ */
+void list(){
+    int n;
+    struct pkt listpkt;
+    int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
+
+    n = recvfrom(sockd, &listpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len);
+printf("[Client #%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
+
+    if(n > 0){
+        printf("Available files on server:\n");
+            //buffer[n] = '\0';
+            fprintf(stdout, "%s", listpkt.data);
+            write(fd, listpkt.data, listpkt.size);
+    }else{
+        printf("No available files on server\n");
+        write(fd, "No available files on server\n", 30);
+    }
+}
+
+int get(int iseq, void *pathname, int pktleft){
+    int fd;
+    size_t filesize;
+    int npkt,edgepkt;
+    int pos,lastpktsize;
+    char *localpathname;
+    struct pkt cargo;
+
+    localpathname = malloc(DATASIZE * sizeof(char));
+    sprintf(localpathname, "%s%s", CLIENT_FOLDER, pathname);
+    printf("local %s\n",localpathname);
+
+    npkt = pktleft;
+    edgepkt=npkt; /*#pkt totali del file da ricevere SOLUZIONE: do + while!!!*/
+
+    if(freespacebuf(npkt)){
+
+receiver:
+        while(npkt>0){
+            check(recvfrom(sockd,&cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "GET-client:recvfrom Cargo");
+printf("pacchetto ricevuto: seq %d, ack %d, pktleft %d, size %d, data %s \n", cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
+            pos=(cargo.seq - initseqserver);
+printf("cargo->seq: %d \n",cargo.seq);
+printf("initseqserver: %d \n",initseqserver);
+printf("pos: %d \n",pos);
+
+            if(pos>edgepkt && pos<0){
+printf("numero sequenza pacchetto ricevuto fuori range \n");
+                return 0;
+            } else if((rcvbuf[pos*(DATASIZE)])==0){ // sono nell'intervallo corretto
+            	printf("VALORE PACCHETTO %d \n",(initseqserver+edgepkt-1));
+                if(cargo.seq == (initseqserver+edgepkt-1)){
+                    lastpktsize = cargo.size;
+                }
+                memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
+                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
+printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
+            }else{
+            	printf("pacchetto già ricevuto, posso scartarlo \n");
+                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
+                goto receiver; // il pacchetto viene scartato
+            }
+            npkt--;
+        }
+
+        filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
+        fd = open(localpathname,O_RDWR|O_TRUNC|O_CREAT,0666);
+        writen(fd,rcvbuf,filesize);
+printf("il file %s e' stato correttamente scaricato\n",(char *)pathname);
+		memset(rcvbuf, 0, (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize );
+        return 1;
+    }else{
+        printf("non ho trovato spazio libero nel buff \n");
+        sendack(sockd, ACK_NEG, initseqserver, pktleft, "Full_Client_Buff"); //ack negativo
+        return 0;
+    }
+}
+
+int put(int iseq, int numpkt, char *filename){
 	struct elab2 *sendpkt;
     int fd;
     int i, j, k, z;
@@ -256,66 +257,63 @@ printf("[Client]: errore nell'invio/ricezione del pkt/ack: %d \n", i);
         return 1;
 }
 
+/*
+ *  function: setop
+ *  ----------------------------
+ *  Check operation validity with server
+ *
+ *  cmd: SYNOP_ABORT, SYNOP_LIST, SYNOP_GET, SYNOP_PUT
+ *  pktleft: (only for put) how many packets the file is made of
+ *  arg: (list) not-used (get) name of the file to get (put) name of the file to put
+ *
+ *  return: quantity of packets the operation should use
+ *  error: 0
+ */
+int setop(int cmd, int pktleft, void *arg){
+    struct pkt synop, ack, synack;
+    char *status = malloc((DATASIZE)*sizeof(char));
+    me = getpid(); // different me for threads doing setop
 
-int get(int iseq, void *pathname, int pktleft){
-    int fd;
-    size_t filesize;
-    int npkt,edgepkt;
-    int pos,lastpktsize;
-    char *localpathname;
-    struct pkt cargo;
+    nextseqnum++;
+    synop = makepkt(cmd, nextseqnum, 0, pktleft, strlen((char *)arg), arg);
 
-    localpathname = malloc(DATASIZE * sizeof(char));
-    sprintf(localpathname, "%s%s", CLIENT_FOLDER, pathname);
-    printf("local %s\n",localpathname);
+printf("[Client #%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
+    check(sendto(sockd, &synop, (HEADERSIZE) + synop.size, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
 
-    npkt = pktleft;
-    edgepkt=npkt; /*#pkt totali del file da ricevere SOLUZIONE: do + while!!!*/
+printf("[Client #%d] Waiting patiently for ack in max %d seconds...\n", me, CLIENT_TIMEOUT);
+    check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "setop:recvfrom");
+printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
-    if(freespacebuf(npkt)){
+    initseqserver = ack.seq;
 
-receiver:
-        while(npkt>0){
-            check(recvfrom(sockd,&cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "GET-client:recvfrom Cargo");
-printf("pacchetto ricevuto: seq %d, ack %d, pktleft %d, size %d, data %s \n", cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
-            pos=(cargo.seq - initseqserver);
-printf("cargo->seq: %d \n",cargo.seq);
-printf("initseqserver: %d \n",initseqserver);
-printf("pos: %d \n",pos);
-
-            if(pos>edgepkt && pos<0){
-printf("numero sequenza pacchetto ricevuto fuori range \n");
-                return 0;
-            } else if((rcvbuf[pos*(DATASIZE)])==0){ // sono nell'intervallo corretto
-            	printf("VALORE PACCHETTO %d \n",(initseqserver+edgepkt-1));
-                if(cargo.seq == (initseqserver+edgepkt-1)){
-                    lastpktsize = cargo.size;
-                }
-                memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
-                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
-printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
-            }else{
-            	printf("pacchetto già ricevuto, posso scartarlo \n");
-                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
-                goto receiver; // il pacchetto viene scartato
-            }
-            npkt--;
+    if(ack.op == ACK_POS){
+printf("Operation %d #%d permitted [estimated packets: %d]\nContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
+        fflush_stdin();
+        if(getchar()=='n'){
+            status = "noserver";
+            cmd = ACK_NEG;
+        }else{
+            cmd = ACK_POS;
+            status = "ok";
         }
 
-        filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
-        fd = open(localpathname,O_RDWR|O_TRUNC|O_CREAT,0666);
-        writen(fd,rcvbuf,filesize);
-printf("il file %s e' stato correttamente scaricato\n",(char *)pathname);
-		memset(rcvbuf, 0, (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize );
-        return 1;
-    }else{
-        printf("non ho trovato spazio libero nel buff \n");
-        sendack(sockd, ACK_NEG, initseqserver, pktleft, "Full_Client_Buff"); //ack negativo
-        return 0;
+        nextseqnum++;
+        synack = makepkt(cmd, nextseqnum, 0, ack.pktleft, strlen(status), status);
+printf("[Client #%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, (char *)synack.data);
+        check(sendto(sockd, &synack, synack.size + HEADERSIZE, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
+
+        if(cmd == ACK_NEG){
+printf("Aborting operation...\n");
+            return 0;
+        }
+        return ack.pktleft;
     }
+
+printf("Operation %d #%d not permitted\n", synop.op, synop.seq);
+    return 0;
 }
 
-int main(int argc, char const *argv[]) {
+int main(int argc, char const *argv[]){
     int cmd;
     char *arg;
     int totpkt; // ret for setop, pktleft of received ack from server

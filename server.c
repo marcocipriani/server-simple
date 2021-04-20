@@ -23,6 +23,27 @@ printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%
 
 }
 
+/*
+ *  function: waitforack
+ *  ----------------------------
+ *  Wait for a positive ack
+ *
+ *  return: 1 on successfully received ack
+ *  error: 0
+ */
+int waitforack() {
+    struct pkt ack;
+
+printf("[Server] Waiting for ack...\n");
+    check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "waitforack:recvfrom");
+printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, ack.data);
+
+    if (ack.op == ACK_POS) {
+        return 1;
+    }
+    return 0;
+}
+
 int freespacebuf(int totpkt) {
     size_t totpktsize;
     int res;
@@ -40,7 +61,6 @@ void *thread_sendpkt(void *arg) {
     struct elab2 *cargo;
     struct pkt sndpkt, rcvack;
     int me;
-    char supp[DATASIZE];
     cargo = (struct elab2 *)arg;
     me = (cargo->thpkt.seq) - (cargo->initialseq); // numero thread
     sndpkt = makepkt(5, cargo->thpkt.seq, 0, cargo->thpkt.pktleft, cargo->thpkt.size, cargo->thpkt.data);
@@ -76,85 +96,7 @@ printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initia
     }
 }
 
-/*
- *  function: waitforack
- *  ----------------------------
- *  Wait for a positive ack
- *
- *  return: 1 on successfully received ack
- *  error: 0
- */
-int waitforack() {
-    struct pkt ack;
-
-printf("[Server] Waiting for ack...\n");
-    check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "waitforack:recvfrom");
-printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, ack.data);
-
-    if (ack.op == ACK_POS) {
-        return 1;
-    }
-    return 0;
-}
-
-int put(int iseq, void *pathname, int pktleft){
-
-    int fd;
-    size_t filesize;
-    int npkt,edgepkt;
-    int pos,lastpktsize;
-    char *localpathname;
-    struct pkt rack, cargo;
-
-    npkt = pktleft;
-    edgepkt = npkt;
-    check(recvfrom(sockd, &rack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "PUT-server:recvfrom ack-client");
-printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", rack.op, rack.seq, rack.ack, rack.pktleft, rack.size, rack.data);
-
-    if (strcmp(rack.data, "ok") == 0) {
-    	initseqserver = rack.seq;
-    	localpathname = malloc(DATASIZE * sizeof(char));
-    	sprintf(localpathname, "%s%s", SERVER_FOLDER, pathname);
-
-receiver:
-        while(npkt>0){
-            check(recvfrom(sockd,&cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "PUT-server:recvfrom Cargo");
-printf("[Server] pacchetto ricevuto: seq %d, ack %d, pktleft %d, size %d, data %s \n", cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
-            pos=(cargo.seq - initseqserver);
-			if(pos>edgepkt && pos<0){
-printf("[Server] numero sequenza pacchetto ricevuto fuori range \n");
-                return 0;
-            } else if((rcvbuf[pos*(DATASIZE)])==0){ // sono nell'intervallo corretto
-            	printf("VALORE PACCHETTO %d \n",(initseqserver+edgepkt-1));
-                if(cargo.seq == (initseqserver+edgepkt-1)){
-                    lastpktsize = cargo.size;
-                }
-                memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
-                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
-printf("[Server] il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
-            }else{
-            	printf("[Server] pacchetto già ricevuto, posso scartarlo \n");
-                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
-                goto receiver; // il pacchetto viene scartato
-            }
-            npkt--;
-        }
-        filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
-        fd = open(localpathname,O_RDWR|O_TRUNC|O_CREAT,0666);
-        writen(fd,rcvbuf,filesize);
-printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname);
-		memset(rcvbuf, 0, (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize);
-        return 1;
-    } else {
-    printf("[Server] Client refuses to transfer the file \n");
-    return 0;
-    }
-}
-
-
-
-
-int get(int iseq, int iack, int numpkt, char *filename) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
+int get(int iseq, int numpkt, char *filename) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     struct pkt ack;
     struct elab2 *sendpkt;
     int fd;
@@ -179,7 +121,6 @@ printf("[SERVER] Problem opening file %s \n", filename);
             exit(EXIT_FAILURE);
         }
 
-transfer:
 printf("inizio trasferimento \n");
         sendpkt = malloc((numpkt) * sizeof(struct elab2)); /*Alloca la memoria per thread che eseguiranno la get */
         if(sendpkt == NULL){
@@ -245,6 +186,60 @@ printf("errore nell'invio/ricezione del pkt/ack: %d \n", i);
     }else{
 printf("il client rifiuta il trasferimento del file\n");
         return 0; /* ho ricevuto ack negativo dal client */
+    }
+}
+
+int put(int iseq, void *pathname, int pktleft){
+
+    int fd;
+    size_t filesize;
+    int npkt,edgepkt;
+    int pos,lastpktsize;
+    char *localpathname;
+    struct pkt rack, cargo;
+
+    npkt = pktleft;
+    edgepkt = npkt;
+    check(recvfrom(sockd, &rack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "PUT-server:recvfrom ack-client");
+printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", rack.op, rack.seq, rack.ack, rack.pktleft, rack.size, rack.data);
+
+    if (strcmp(rack.data, "ok") == 0) {
+    	initseqserver = rack.seq;
+    	localpathname = malloc(DATASIZE * sizeof(char));
+    	sprintf(localpathname, "%s%s", SERVER_FOLDER, pathname);
+
+receiver:
+        while(npkt>0){
+            check(recvfrom(sockd,&cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "PUT-server:recvfrom Cargo");
+printf("[Server] pacchetto ricevuto: seq %d, ack %d, pktleft %d, size %d, data %s \n", cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
+            pos=(cargo.seq - initseqserver);
+			if(pos>edgepkt && pos<0){
+printf("[Server] numero sequenza pacchetto ricevuto fuori range \n");
+                return 0;
+            } else if((rcvbuf[pos*(DATASIZE)])==0){ // sono nell'intervallo corretto
+            	printf("VALORE PACCHETTO %d \n",(initseqserver+edgepkt-1));
+                if(cargo.seq == (initseqserver+edgepkt-1)){
+                    lastpktsize = cargo.size;
+                }
+                memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
+                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
+printf("[Server] il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
+            }else{
+            	printf("[Server] pacchetto già ricevuto, posso scartarlo \n");
+                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
+                goto receiver; // il pacchetto viene scartato
+            }
+            npkt--;
+        }
+        filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
+        fd = open(localpathname,O_RDWR|O_TRUNC|O_CREAT,0666);
+        writen(fd,rcvbuf,filesize);
+printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname);
+		memset(rcvbuf, 0, (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize);
+        return 1;
+    } else {
+    printf("[Server] Client refuses to transfer the file \n");
+    return 0;
     }
 }
 
@@ -324,7 +319,7 @@ printf("Client operation aborted\n");
 }
 
 int main(int argc, char const *argv[]) {
-    struct pkt cpacket, sack;
+    struct pkt cpacket;
     struct elab epacket;
     char *spath = DEFAULT_PATH; // root folder for server
     char *filename, *localpathname;
@@ -338,19 +333,12 @@ int main(int argc, char const *argv[]) {
     if (argc > 1) spath = (char *)argv[1];
 printf("Root folder: %s\n", spath);
     nextseqnum = 1;
-    //setsock2();
     memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
     sockd = setsock(&servaddr, SERVER_ADDR, SERVER_PORT, SERVER_TIMEOUT, 1);
-
-    //sockd = setsock(&servaddr, NULL, SERVER_PORT, 0, 1);
     len = sizeof(struct sockaddr_in);
 
-    // TMP for testing list
-    char *res = malloc((DATASIZE - 1) * sizeof(char)); // client has to put \0 at the end
-    char **resptr = &res;
     // TMP for testing ack status
     int filesize;
-    int listsize = 0;
 
     while (1) {
         /* Infinite receiving  */
@@ -395,7 +383,7 @@ printf("Operation cmd:%d seq:%d status:completed unsuccessfully\n\n", epacket.cl
                 printf("[SERVER] File selected is %s and it has generate %d pkt to transfer \n", filename, filesize);
                 //sack = makepkt(4, nextseqnum, cpacket.seq, filesize, 2, "ok");
                 sendack(sockd, ACK_POS, cpacket.seq, filesize, "ok");
-                if (get(nextseqnum, cpacket.seq, filesize, localpathname)) {
+                if (get(nextseqnum, filesize, localpathname)) {
                     printf("[SERVER] Sending file %s complete with success \n", filename);
                   }else{
                       printf("[SERVER]Problem with transfer file %s to client  \n", filename);
