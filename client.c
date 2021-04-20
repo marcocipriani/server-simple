@@ -90,7 +90,14 @@ void sendack(int sockd, int op, int serseq, int pktleft, char *status){
 printf("[Client #%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 }
 
-
+/*
+ *  function: freespacebuf
+ *  ----------------------------
+ *  Check if there's enough space in the receiver buffer
+ *
+ *  return: 1 if it's free
+ *  error: 0
+ */
 int freespacebuf(int totpkt){
 	size_t totpktsize;
 	int res;
@@ -135,7 +142,6 @@ void *thread_sendpkt(void *arg) {
     struct elab2 *cargo;
     struct pkt sndpkt, rcvack;
     int me;
-    char supp[DATASIZE];
     cargo = (struct elab2 *)arg;
     me = (cargo->thpkt.seq) - (cargo->initialseq); // numero thread
     sndpkt = makepkt(5, cargo->thpkt.seq, 0, cargo->thpkt.pktleft, cargo->thpkt.size, cargo->thpkt.data);
@@ -171,7 +177,7 @@ printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initia
     }
 }
 
-int put(int iseq, int iack, int numpkt, char *filename) {
+int put(int iseq, int numpkt, char *filename) {
 	struct elab2 *sendpkt;
     int fd;
     int i, j, k, z;
@@ -187,13 +193,12 @@ printf("[SERVER] Problem opening file %s \n", filename);
 		exit(EXIT_FAILURE);
 	}
 
-transfer:
 printf("[Client] inizio trasferimento \n");
         sendpkt = malloc((numpkt) * sizeof(struct elab2)); /*Alloca la memoria per thread che eseguiranno la get */
         if(sendpkt == NULL){
 printf("[Client]: ERRORE malloc sendpkt del file %s", filename);
             exit(EXIT_FAILURE);
-      }
+    }
 
         counter = malloc((numpkt) * sizeof(int));
         if(counter == NULL){
@@ -253,14 +258,12 @@ printf("[Client]: errore nell'invio/ricezione del pkt/ack: %d \n", i);
 
 
 int get(int iseq, void *pathname, int pktleft){
-
     int fd;
     size_t filesize;
     int npkt,edgepkt;
     int pos,lastpktsize;
     char *localpathname;
-    struct pkt rack, sack, cargo;
-
+    struct pkt cargo;
 
     localpathname = malloc(DATASIZE * sizeof(char));
     sprintf(localpathname, "%s%s", CLIENT_FOLDER, pathname);
@@ -379,10 +382,10 @@ fselect:
                     goto fselect;
                 }
                 if((totpkt = setop(SYNOP_PUT, filesize, arg)) > 0){
-                	if (put(nextseqnum, initseqserver, filesize, localpathname)) { //essendo globale nextseqnum viene aggiornato nella setop
-                    	printf("[Client] Sending file %s complete with success \n", arg);
+                	if (put(nextseqnum, filesize, localpathname)) { //essendo globale nextseqnum viene aggiornato nella setop
+printf("[Client] Sending file %s complete with success \n", arg);
                   	} else{
-                      printf("[CLient]Problem with transfer file %s to server  \n", arg);
+printf("[CLient]Problem with transfer file %s to server  \n", arg);
                       exit(EXIT_FAILURE);
                   }
                 } else {
