@@ -41,7 +41,7 @@ printf("[Client #%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d
 
     if(ack.op == ACK_POS){
 printf("Operation %d #%d permitted [estimated packets: %d]\nContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
-        fflush(stdin);
+		fflush_stdin();
         if(getchar()=='n'){
             status = "noserver";
             cmd = ACK_NEG;
@@ -343,9 +343,9 @@ printf("Welcome to server-simple app, client #%d\n", me);
         /* Infinite parsing input */
         printf("\nAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\nChoose an operation and press ENTER: ");
 
-        if(!fscanf(stdin, "%d", &cmd)){
+        if((fscanf(stdin, "%d", &cmd)) < 1){
             printf("Invalid operation code\n");
-            fflush(stdin);
+			fflush_stdin();
             continue;
         }
 
@@ -363,7 +363,7 @@ quickstart:
             case SYNOP_GET: // get
                 printf("Type filename to get and press ENTER: ");
                 fscanf(stdin, "%s", arg);
-                fflush(stdin);
+				fflush_stdin();
                 if((totpkt = setop(SYNOP_GET, 0, arg)) > 0){
                     get(nextseqnum, arg, totpkt);
                 }
@@ -378,7 +378,7 @@ fselect:
         	    sprintf(localpathname, "%s%s", CLIENT_FOLDER, arg);
                 if((filesize = calculate_numpkts(localpathname)) < 1){
                     printf("File not found\n");
-                    fflush(stdin);
+					fflush_stdin();
                     goto fselect;
                 }
                 if((totpkt = setop(SYNOP_PUT, filesize, arg)) > 0){
