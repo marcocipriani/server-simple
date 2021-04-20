@@ -12,7 +12,8 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <pthread.h>
-//#include <ctype.h>
+#include <ctype.h>
+#include <termios.h>
 //#include <sys/mman.h>
 
 #include "macro.h"
@@ -233,4 +234,9 @@ printf("[Client] Ready to contact %s at %d.\n", address, port);
     check(setsockopt(sockd, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout)), "setsock:setsockopt");
 
     return sockd;
+}
+
+void fflush_stdin() {
+	char c;
+	while(( c=getchar()) != EOF && c != '\n');
 }
