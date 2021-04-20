@@ -13,8 +13,6 @@
 #include <errno.h>
 #include <pthread.h>
 #include <ctype.h>
-#include <termios.h>
-//#include <sys/mman.h>
 
 #include "macro.h"
 
@@ -150,17 +148,28 @@ void *check_mem(void *mem, const char *msg){
     return mem;
 }
 
-/* Read "n" bytes from a descriptor. */
-ssize_t readn(int fd, void *vptr, size_t n) {
+/*
+ *  function: readn
+ *  ----------------------------
+ *  Read n bytes from a file
+ *
+ *  fd: file descriptor to read from
+ *  buf: buffer to save read bytes
+ *  n: number of bytes to read
+ *
+ *  return: number of bytes actually read
+ *  error: -1
+ */
+ssize_t readn(int fd, void *buf, size_t n) {
     size_t nleft;
     ssize_t nread;
     char *ptr;
 
-    ptr = vptr;
+    ptr = buf;
     nleft = n;
     while (nleft > 0) {
-        if ((nread = read(fd, ptr, nleft)) < 0){ // ERROR
-            if (errno == EINTR)
+        if ((nread = read(fd, ptr, nleft)) < 0){ // error
+            if (errno == EINTR) // read interrupted by a signal
                 nread = 0;
             else
                return (-1);
@@ -170,45 +179,57 @@ ssize_t readn(int fd, void *vptr, size_t n) {
         nleft -= nread;
         ptr += nread;
         //ALERT :if((int)nread<(int)n) break;
-        /* Se leggi di meno non bloccare ed esci dal ciclo*/
+        // Se leggi di meno non bloccare ed esci dal ciclo
     }
     return (n - nleft);
 }
 
-/* Write "n" bytes to a descriptor. */
- ssize_t writen(int fd, const void *vptr, size_t n){
-     size_t nleft;
-     ssize_t nwritten;
-     const char *ptr;
-     ptr = vptr;
-     nleft = n;
-     while (nleft > 0) {
-         if ( (nwritten = write(fd, ptr, nleft)) <= 0) {
-             if (nwritten < 0 && errno == EINTR)
-                 nwritten = 0;   /* and call write() again */
-             else
-                 return (-1);    /* error */
-          }
-          nleft -= nwritten;
-          ptr += nwritten;
-     }
-     return (n);    /* byte ancora da scrivere*/
- }
+/*
+ *  function: writen
+ *  ----------------------------
+ *  Write n bytes to a file
+ *
+ *  fd: file descriptor to write onto (write destination)
+ *  vptr: buffer with bytes to write (write source)
+ *  n: number of bytes to write
+ *
+ *  return: number of bytes actually written TODO ?
+ *  error: -1
+ */
+ssize_t writen(int fd, const void *vptr, size_t n){
+    size_t nleft;
+    ssize_t nwritten;
+    const char *ptr;
+    ptr = vptr;
+    nleft = n;
 
- /*
-  *  function: setsock
-  *  ----------------------------
-  *  Create a socket with defined address (even for server purpose) and timeout
-  *
-  *  addr: pointer to address to fill
-  *  address: address of the host to contact
-  *  port: port of the host to contact
-  *  seconds: time for timeout
-  *  is_server: flag useful for server purpose (address = ANY and bind on a defined port)
-  *
-  *  return: descriptor of a new socket
-  *  error: 0
-  */
+    while (nleft > 0) {
+        if((nwritten = write(fd, ptr, nleft)) <= 0){
+            if (nwritten < 0 && errno == EINTR)
+                nwritten = 0; // and call write() again
+        else
+            return (-1); // error
+        }
+        nleft -= nwritten;
+        ptr += nwritten;
+    }
+    return n; // bytes still to read
+}
+
+/*
+ *  function: setsock
+ *  ----------------------------
+ *  Create a socket with defined address (even for server purpose) and timeout
+ *
+ *  addr: pointer to address to fill
+ *  address: address of the host to contact
+ *  port: port of the host to contact
+ *  seconds: time for timeout
+ *  is_server: flag useful for server purpose (address = ANY and bind on a defined port)
+ *
+ *  return: descriptor of a new socket
+ *  error: 0
+ */
 int setsock(struct sockaddr_in *addr, char *address, int port, int seconds, int is_server){
     int sockd;
     struct timeval tout;
@@ -236,7 +257,15 @@ printf("[Client] Ready to contact %s at %d.\n", address, port);
     return sockd;
 }
 
+/*
+ *  function: fflush_stdin
+ *  ----------------------------
+ *  Implementation safe for fflush
+ *
+ *  return: -
+ *  error: -
+ */
 void fflush_stdin() {
 	char c;
-	while(( c=getchar()) != EOF && c != '\n');
+	while( (c=getchar())!=EOF && c!='\n');
 }
