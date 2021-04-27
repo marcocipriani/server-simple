@@ -67,6 +67,11 @@ void *thread_sendpkt(void *arg) {
 printf("sono il thread # %d \n", me);
 printf("valore del counter[%d] : %d \n", me, cargo->p[me]);*/
 
+    //wait(pkts_to_send) //sem locale
+    //wait(sender_window) //globale
+    //lock Pila
+    sndpkt = pop((CellaPila)&arg);
+    //unlock Pila
 
     sendto(sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
 check_ack:

@@ -78,12 +78,12 @@ printf("pacchetto %d non inserito nella pila\n",data.seq);
     }
 }
 
-int pop(CellaPila *topPtr){
+struct pkt pop(CellaPila *topPtr){
     CellaPila tempPtr;    //puntatore temporaneo al nodo
-    int popValue;         //numero seq del nodo
+    struct pkt popValue;         //pacchetto rimosso
 
     tempPtr = *topPtr;
-    popValue = (*topPtr)->packet.seq;
+    popValue = (*topPtr)->packet;
     *topPtr = (*topPtr)->nextPtr;
     free(tempPtr);
 
