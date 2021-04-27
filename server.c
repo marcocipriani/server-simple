@@ -61,44 +61,59 @@ void *thread_sendpkt(void *arg) {
     struct elab2 *cargo;
     struct pkt sndpkt, rcvack;
     int me;
+    int k;
 /*    cargo = (struct elab2 *)arg;
     me = (cargo->thpkt.seq) - (cargo->initialseq); // numero thread
     sndpkt = makepkt(5, cargo->thpkt.seq, 0, cargo->thpkt.pktleft, cargo->thpkt.size, cargo->thpkt.data);
 printf("sono il thread # %d \n", me);
 printf("valore del counter[%d] : %d \n", me, cargo->p[me]);*/
-
-    //wait(pkts_to_send) //sem locale
-    //wait(sender_window) //globale
+transmit:
+    //wait(pkts_to_send) //sem locale alto numpkt
+    //wait(sender_window) //globale alto wsize
     //lock Pila
-    sndpkt = pop((CellaPila)&arg);
+    sndpkt = pop((struct CellaPila)&arg);
+    //if pop==NULL pthread_exit
     //unlock Pila
 
     sendto(sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
+    //nextseqnum++;//LA RITRASMISSIONE NON DEVE ALZARLO
+    /*if timer == OFF 
+      signal semTimer */
+
 check_ack:
     check(recvfrom(sockd, &rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "SERVER-get-thread:recvfrom ack-client");
-    // lock buffer
+    // lock counter
 printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ack) - (cargo->initialseq) + 1);
 printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
 
-    if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 0) {
-    cargo->p[(rcvack.ack) - (cargo->initialseq)] = (int)cargo->p[(rcvack.ack) - (cargo->initialseq)] + 1;
-    printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-    // unlock buffer
-
-printf("sono il thread # %d e muoio \n", me);
-pthread_exit(tstatus);
-    } else if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 2) {
+    if(rcvack.ack >= base){   //ricevo un ack nella finestra
+        for (k=base;k<=rcvack.ack;k++){
+          cargo->p[k - (cargo->initialseq)] = (int)cargo->p[k - (cargo->initialseq)] + 1; //sottraggo il num.seq iniziale
+          base++;
+          //signal(sender_window)
+printf("valore aggiornato in counter[%d] : %d \n", k - (cargo->initialseq), cargo->p[k - (cargo->initialseq)]);
+        }
+        // unlock counter
+        //SIGQUEUE al padre per fornirgli la nuova base
+        goto transmit;
+    }
+    else if(rcvack.ack==base-1){
+        if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 2) {
 printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
-    (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
-printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-    // unlock buffer
-        goto check_ack;
-    }else{
-        (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
-printf("SONO IMPAZZITO \n");
-printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-    // unlock buffer
-    goto check_ack;
+            (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = 0;//(cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
+printf("azzero il counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
+            //unlock counter
+            //SIGQUEUE al padre per ritrasmettere(verificare che continui il flusso)
+        }
+        else {
+            (cargo->p[(rcvack.ack) - (cargo->initialseq)])=(int)(cargo->p[(rcvack.ack) - (cargo->initialseq)])+1;
+            // unlock counter
+            goto transmit;
+        }
+    }
+    else{
+        // unlock counter
+        goto transmit;
     }
 }
 
@@ -178,14 +193,16 @@ printf("server:ERRORE pthread_create GET in main");
             }
 
 
+          signal(SIGQUEUE,handler);
 
+          while(base<=numpkt){
+          /*wait semTimer
+            int control=base;
+            sleep(Timeout_Interval)
+            if p[control - initialseq]==0    //RITRASMISSIONE
+              push(&stackPtr,send[control - initialseq])  //o handler
+        }*/
 
-        for(k = 0; k < WSIZE; k++){
-printf("sono il padre e aspetto %d thread \n", numpkt - k);
-            pthread_join(tid[k], tstatus);
-            printf("un figlio e' morto \n");
-      }
-printf("tutti i thread hanno finito \n");
 
         // controllo che siano stati ricevuti tutti gli ACK
         for(i = 0; i < numpkt; i++){
