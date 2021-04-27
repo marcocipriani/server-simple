@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include <ctype.h>
 
+
 #include "macro.h"
 
 struct pkt{
@@ -39,6 +40,14 @@ struct elab2{
     struct pkt thpkt;
 };
 
+struct stackNode{
+  struct pkt packet;
+  struct stackNode *nextPtr;
+};
+
+typedef struct stackNode Pila;
+typedef Pila *CellaPila;
+
 /*
  *  function: makepkt
  *  ----------------------------
@@ -54,6 +63,33 @@ struct elab2{
  *  return: a packet with parameters
  *  error:
  */
+
+void push(CellaPila *topPtr, struct pkt data){
+    CellaPila newPtr;     //puntatore al nuovo nodo
+
+    newPtr = malloc(sizeof(Pila));
+    if (newPtr != NULL){
+      newPtr->packet = data;
+      newPtr->nextPtr = *topPtr;
+      *topPtr = newPtr;
+    }
+    else{// no space available
+printf("pacchetto %d non inserito nella pila\n",data.seq);
+    }
+}
+
+int pop(CellaPila *topPtr){
+    CellaPila tempPtr;    //puntatore temporaneo al nodo
+    int popValue;         //numero seq del nodo
+
+    tempPtr = *topPtr;
+    popValue = (*topPtr)->packet.seq;
+    *topPtr = (*topPtr)->nextPtr;
+    free(tempPtr);
+
+    return popValue;
+}
+
 struct pkt makepkt(int op, int seq, int ack, int pktleft, size_t size, void *data){
     struct pkt packet;
 

@@ -17,6 +17,7 @@
 #define MAXTRANSUNIT 1500
 #define HEADERSIZE 5*sizeof(int)
 #define DATASIZE MAXTRANSUNIT-HEADERSIZE
+#define WSIZE 10
 // OP codes
 #define SYNOP_ABORT 0
 #define SYNOP_LIST 1

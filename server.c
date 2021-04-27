@@ -61,11 +61,12 @@ void *thread_sendpkt(void *arg) {
     struct elab2 *cargo;
     struct pkt sndpkt, rcvack;
     int me;
-    cargo = (struct elab2 *)arg;
+/*    cargo = (struct elab2 *)arg;
     me = (cargo->thpkt.seq) - (cargo->initialseq); // numero thread
     sndpkt = makepkt(5, cargo->thpkt.seq, 0, cargo->thpkt.pktleft, cargo->thpkt.size, cargo->thpkt.data);
 printf("sono il thread # %d \n", me);
-printf("valore del counter[%d] : %d \n", me, cargo->p[me]);
+printf("valore del counter[%d] : %d \n", me, cargo->p[me]);*/
+
 
     sendto(sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
 check_ack:
@@ -114,6 +115,7 @@ printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
     if (strcmp(ack.data, "ok") == 0) { /* ho ricevuto ack positivo dal client */
 printf("[SERVER] Connection established \n");
 
+        CellaPila stackPtr = NULL;
 
         fd = open(filename, O_RDONLY, 00700); // apertura file da inviare
         if(fd == -1){ /*file non aperto correttamente*/
@@ -122,7 +124,7 @@ printf("[SERVER] Problem opening file %s \n", filename);
         }
 
 printf("inizio trasferimento \n");
-        sendpkt = malloc((numpkt) * sizeof(struct elab2)); /*Alloca la memoria per thread che eseguiranno la get */
+        sendpkt = malloc((numpkt) * sizeof(struct pkt)); /*Alloca la memoria per thread che eseguiranno la get */
         if(sendpkt == NULL){
 printf("server: ERRORE malloc sendpkt del file %s", filename);
             exit(EXIT_FAILURE);
@@ -134,7 +136,7 @@ printf("server: errore malloc contatore ack \n");
             exit(EXIT_FAILURE);
         }
 
-        tid = malloc((numpkt) * sizeof(pthread_t));
+        tid = malloc((WSIZE) * sizeof(pthread_t));
         if (tid == NULL) {
 printf("server: errore malloc contatore ack \n");
             exit(EXIT_FAILURE);
@@ -150,23 +152,30 @@ printf("server: errore malloc contatore ack \n");
 printf("aux %d \n", aux);
 printf("lunghezza dati: %lu\n", strlen((char *)dati));
 
-            sendpkt[j].thpkt = makepkt(5, iseq, 0, numpkt - j, aux, dati);
-printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].thpkt.size, sendpkt[j].thpkt.pktleft, sendpkt[j].thpkt.data);
-            sendpkt[j].p = counter;
-            sendpkt[j].initialseq = init;
-            for (z = 0; z < 120; z++) {
+            sendpkt[j] = makepkt(5, iseq, 0, numpkt - j, aux, dati);
+printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendpkt[j].pktleft, sendpkt[j].data);
+            /*sendpkt[j].p = counter;
+            sendpkt[j].initialseq = init;*/
+          /*  for (z = 0; z < 120; z++) {
 printf("%c", sendpkt[j].thpkt.data[z]);
-            }
-
-            if(pthread_create(&tid[j], NULL, thread_sendpkt, (void *)&sendpkt[j]) != 0){
-printf("server:ERRORE pthread_create GET in main");
-                exit(EXIT_FAILURE);
-            }
-            memset(dati, 0, DATASIZE);
+}*/         memset(dati, 0, DATASIZE);
             iseq++;
         }
 
-        for(k = 0; k < numpkt; k++){
+            for (z=numpkt-1; z>=0;z--){
+              push(&stackPtr, sendpkt[z]);
+            }
+
+            for(j=0;j<WSIZE;j++)
+            if(pthread_create(&tid[j], NULL, thread_sendpkt, (void *)stackPtr) != 0){
+printf("server:ERRORE pthread_create GET in main");
+                exit(EXIT_FAILURE);
+            }
+
+
+
+
+        for(k = 0; k < WSIZE; k++){
 printf("sono il padre e aspetto %d thread \n", numpkt - k);
             pthread_join(tid[k], tstatus);
             printf("un figlio e' morto \n");
@@ -302,7 +311,7 @@ int setop(struct elab opdata) {
     sendack(sockd, ACK_POS, opdata.clipacket.seq, listsize, status);
 
 printf("[Server] Waiting for synack...\n"); // TODO in SERVER_TIMEOUT
-    recvfrom(sockd, &synack, DATASIZE, 0, (struct sockaddr *)&cliaddr, &len);
+    recvfrom(sockd, &synack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len);
 printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
 
     if (opdata.clipacket.op == SYNOP_LIST && synack.op == ACK_POS) {
