@@ -30,6 +30,7 @@ struct pkt{
 // TMP
 struct elab{
     struct sockaddr_in cliaddr;
+    // int sockd;
     struct pkt clipacket;
 };
 
@@ -37,6 +38,11 @@ struct elab2{
     int initialseq;   //numero sequenza iniziale per un dato file
     int *p;          //puntatore a array di contatori (ricezione ack)
     struct pkt thpkt;
+};
+
+struct elab3{
+    struct pkt oper;
+    int sockd;
 };
 
 /*
@@ -108,6 +114,28 @@ int calculate_numpkts(char *pathname){
     }
 
     return numpkts;
+}
+
+/*
+ *  function: freespacebuf
+ *  ----------------------------
+ *  Check if there's enough space in the receiver buffer
+ *
+ *  return: 1 if it's free
+ *  error: 0
+ */
+int freespacebuf(int totpkt){
+    size_t totpktsize;
+    char rcvbuf[DATASIZE]; // obsolete
+    int res;
+
+    totpktsize = (size_t) (totpkt*sizeof(char))*(DATASIZE*sizeof(char));
+    res = sizeof(rcvbuf)-totpktsize; // obsolete
+    if(res >=0){
+        return 1;
+    }else{
+        return 0;
+    }
 }
 
 /*
@@ -221,39 +249,30 @@ ssize_t writen(int fd, const void *vptr, size_t n){
  *  ----------------------------
  *  Create a socket with defined address (even for server purpose) and timeout
  *
- *  addr: pointer to address to fill
- *  address: address of the host to contact
- *  port: port of the host to contact
+ *  addr: address of contacting end point
  *  seconds: time for timeout
- *  is_server: flag useful for server purpose (address = ANY and bind on a defined port)
  *
  *  return: descriptor of a new socket
- *  error: 0
+ *  error: -1
  */
-int setsock(struct sockaddr_in *addr, char *address, int port, int seconds, int is_server){
-    int sockd;
+int setsock(struct sockaddr_in addr, int seconds){
+    int sockd = -1;
     struct timeval tout;
 
     sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
 
-    //check_mem(memset((void *)&addr, 0, sizeof(addr)), "setsock:memset");
-    addr->sin_family = AF_INET;
-    addr->sin_port = htons(port);
-
-    if(is_server){
-        addr->sin_addr.s_addr = htonl(INADDR_ANY);
-
-        check(bind(sockd, (struct sockaddr *)addr, sizeof(struct sockaddr)), "setsock:bind");
-printf("[Server] Ready to accept on port %d (sockd = %d)\n\n", port, sockd);
-    }else{
-        check(inet_pton(AF_INET, address, &addr->sin_addr), "setsock:inet_pton");
-printf("[Client] Ready to contact %s at %d.\n", address, port);
-    }
+    // check_mem(memset((void *)&addr, 0, sizeof(addr)), "setsock:memset");
+    // addr->sin_family = AF_INET;
+    // addr->sin_port = htons(port);
+    // addr->sin_addr.s_addr = htonl(INADDR_ANY);
+    // check(inet_pton(AF_INET, address, &addr->sin_addr), "setsock:inet_pton");
+    check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
 
     tout.tv_sec = seconds;
     tout.tv_usec = 0;
     check(setsockopt(sockd, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout)), "setsock:setsockopt");
 
+printf("Created new socket id:%d family:%d port:%d addr:%d\n", sockd, addr.sin_family, addr.sin_port, addr.sin_addr.s_addr);
     return sockd;
 }
 

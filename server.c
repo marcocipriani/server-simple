@@ -44,7 +44,7 @@ printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
     return 0;
 }
 
-int freespacebuf(int totpkt) {
+int freespacebuf2(int totpkt) {
     size_t totpktsize;
     int res;
 
@@ -203,6 +203,7 @@ int put(int iseq, void *pathname, int pktleft){
     check(recvfrom(sockd, &rack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "PUT-server:recvfrom ack-client");
 printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", rack.op, rack.seq, rack.ack, rack.pktleft, rack.size, rack.data);
 
+    // strcmp(rack.op, ACK_POS)
     if (strcmp(rack.data, "ok") == 0) {
     	initseqserver = rack.seq;
     	localpathname = malloc(DATASIZE * sizeof(char));
@@ -334,7 +335,10 @@ int main(int argc, char const *argv[]) {
 printf("Root folder: %s\n", spath);
     nextseqnum = 1;
     memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
-    sockd = setsock(&servaddr, SERVER_ADDR, SERVER_PORT, SERVER_TIMEOUT, 1);
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(SERVER_PORT);
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    sockd = setsock(servaddr, SERVER_TIMEOUT);
     len = sizeof(struct sockaddr_in);
 
     // TMP for testing ack status
@@ -397,7 +401,7 @@ printf("Operation cmd:%d seq:%d status:completed unsuccessfully\n\n", epacket.cl
                 break;
 
             case SYNOP_PUT: // put
-            	if (freespacebuf(cpacket.pktleft)) {
+            	if (freespacebuf2(cpacket.pktleft)) {
             		printf("IL SERVER PUÒ OSPITARE IL FILE %s \n",cpacket.data);
             		sendack(sockd, ACK_POS, cpacket.seq, cpacket.pktleft, "ok");
             		if (put(nextseqnum, cpacket.data, cpacket.pktleft)) {
