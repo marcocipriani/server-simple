@@ -13,6 +13,8 @@
 #include <errno.h>
 #include <pthread.h>
 #include <ctype.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
 
 
 #include "macro.h"
@@ -38,6 +40,26 @@ struct elab2{
     int initialseq;   //numero sequenza iniziale per un dato file
     int *p;          //puntatore a array di contatori (ricezione ack)
     struct pkt thpkt;
+};
+
+struct thread_info{
+    struct Cellapila stack; //puntatore a Pila
+    int semLoc;              //descrittore semaforo local
+    int semTimer;
+    pthread_mutex_t mutex_stack;
+    pthread_mutex_t mutex_ack_counter;
+    int *ack_counters;      //contatore di ack
+    int *base;               //numero sequenza in push_base
+    int initialseq;         //numero di sequenza iniziale
+    int numpkt;
+    int sockid;             //socket a cui spedire pkt
+    int timer;
+    double *estimatedRTT;
+    double *sampleRTT;
+    double *timeout_Interval;
+    pid_t father_pid;       //pid del padre
+
+
 };
 
 struct stackNode{
