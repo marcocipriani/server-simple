@@ -21,16 +21,17 @@ struct pkt{
     int seq;
     int ack;
     int pktleft;
-        // client synop-abort:notset synop-list:notset synop-get:notset synop-put:totalpackets cargo:relativepktnumber ack-list:notset ack-get:notset
-        // server ack-list:totalpackets ack-get:totalpackets ack-put:notset cargo:relativepktnumber
+        // client synop-list:notset synop-get:notset synop-put:totalpackets synack:ack.pktleft cargo:relativepktnumber ack-cargo:cargo.pktleft
+        // server ack-list:totalpackets ack-get:totalpackets ack-put:synop.pktleft cargo:relativepktnumber ack-cargo:cargo.pktleft
     int size;
-    char data[DATASIZE]; // synop: arg, ack:operationstatus (0 ok 1 denied 2 trylater) empty for ack
+    char data[DATASIZE];
+        // client synop-list:notset synop-get:pathname synop-put:pathname synack:pathname(//TODO or notset?) cargo:data ack-cargo:notset
+        // server ack-list:operationstatus ack-get:operationstatus ack-put:operationstatus cargo:data ack-cargo:notset
 };
 
-// TMP
+// used by main thread to pass operation data to father thread
 struct elab{
     struct sockaddr_in cliaddr;
-    // int sockd;
     struct pkt clipacket;
 };
 
