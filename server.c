@@ -303,6 +303,7 @@ printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
  *  error: -1
  */
 int setop(struct elab opdata) {
+    pid_t me = getpid();
     struct pkt ack, synack;
     int opersd;
     int pktleft;
@@ -322,11 +323,11 @@ int setop(struct elab opdata) {
     }
 
     check(sendto(opersd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "setop:sendto:ack");
-printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+printf("[Server pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
-printf("[Server] Waiting for synack in %d seconds...\n", SERVER_TIMEOUT);
+printf("[Server pid:%d sockd:%d] Waiting for synack in %d seconds...\n", SERVER_TIMEOUT, me, opersd);
     recvfrom(opersd, &synack, DATASIZE, 0, (struct sockaddr *)&opdata.cliaddr, &len);
-printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
+printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
 
     if(synack.op == ACK_NEG){
 printf("Client operation aborted\n");
@@ -341,6 +342,7 @@ int main(int argc, char const *argv[]) {
     struct pkt synop, ack; // ack only when rejecting packets with bad op code
     struct sockaddr_in cliaddr;
     struct elab opdata;
+    pid_t me;
     pthread_t tid;
     int ongoing_operations;
     char *spath = DEFAULT_PATH; // root folder for server
@@ -353,6 +355,7 @@ int main(int argc, char const *argv[]) {
 
     /*** Init ***/
     if (argc > 1) spath = (char *)argv[1];
+    me = getpid();
 printf("Root folder: %s\n", spath);
     memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
     servaddr.sin_family = AF_INET;
@@ -368,11 +371,11 @@ printf("Root folder: %s\n", spath);
         check_mem(memset(&cliaddr, 0, sizeof(struct sockaddr_in)), "main:memset:cliaddr");
         check_mem(memset(&synop, 0, sizeof(struct pkt)), "main:memset:synop");
 
-printf("[Server] Waiting for synop...\n");
+printf("[Server pid:%d sockd:%d] Waiting for synop...\n", me, connsd);
         check(recvfrom(connsd, &synop, HEADERSIZE + DATASIZE, 0, (struct sockaddr *)&cliaddr, &len), "main:rcvfrom:synop");
-printf("[Server] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, synop.data);
+printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, connsd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, synop.data);
 
-        // TODO if ongoing_operations >= BACKLOG goto recvfrom synop
+        // TODO if ongoing_operations >= BACKLOG send negative ack and goto recvfrom synop
 
         // Prepare op for child
         check_mem(memset(&opdata, 0, sizeof(struct elab)), "main:memset:opdata");
@@ -452,7 +455,7 @@ printf("Can't handle this packet\n\n");
                 check_mem(memset(&ack, 0, sizeof(struct pkt)), "main:memset:ack");
                 ack = makepkt(ACK_NEG, nextseqnum, opdata.clipacket.seq, opdata.clipacket.pktleft, strlen("malformed packet"), "malformed packet");
                 check(sendto(connsd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "main:sendto:ack:malformed_packet");
-printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+printf("[Server pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, connsd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
                 break;
         }
     } // end while
