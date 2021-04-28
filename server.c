@@ -3,7 +3,7 @@
 #include <dirent.h>
 
 /* variabili globali*/
-pthread_mutex_t mtx;
+pthread_mutex_t mtxlist;
 
 int sockd;
 int nextseqnum;
@@ -42,71 +42,62 @@ void get(struct pkt *reqdata){
     printf("%s\n", reqdata->data);
 }
 
-void list(char** res, const char* path ,void * address){
+void Createlist(char **res, const char *path) {
 
-    DIR *dp = NULL;
-    struct dirent *dptr = NULL;
-    FILE *file;
+    int fdl;
+    int i;
     int n_entry;
-    char buff[128];
-    char buffer[128];
+    DIR *dirp = NULL;
+    struct dirent **filename;
 
     //PRENDO IL LOCK IL MUTEX
-    if(pthread_mutex_lock(&mtx) != 0)
-          exit_on_error("server:pthread_mutex_lock");
+    check(pthread_mutex_lock(&mtxlist),"Server:pthread_mutexlist_lock");
 
-    // setto il buffer
-    memset(buff,0,sizeof(buff));  //to 0
+      check_mem(dirp = opendir(path),"list nell'apertura della directory");
 
-    //copio nel buffer il path dato in input ( nel caso del progetto viene da pacchetto)
-    strcpy(buff,path);
+      printf("CONTENUTO DELLA CARTELLA [%s] \n",path);
+      /*Crea un file che contiene la filelist*/
 
-    // Stream della directory SE C'È ERRORE -> NULL
-    if((dp = opendir(path) == NULL ){
-        printf("\n Errore nell'apertura della directory[%s]\n",path);
-        exit(1);
-    }
-    else
-    {
-        printf("\n Il contenuto della directory [%s]\n",path);
-        // Leggo il contenuto della directory
-        while(NULL != (dptr = readdir(dp)) )
-        { /*
-          //ORDINAMENTO ALFABETICO DA SISTEMARE
-          if((n_entry =scandir(path,&(dptr),NULL,alphasort)) < 0){
-            printf("server-list:scandir\n");
-            exit(-1);
-          }*/
+      check(fdl = open("list.txt",O_CREAT | O_RDWR | O_TRUNC,0644),"server:open server_files.txt");
 
-          sprintf(buffer, "ls %s | cat > list.txt", path);
-          system(buffer);
+      check(n_entry =scandir(path,&filename,NULL,alphasort) ,"server:scandir");
 
-          file = fopen("list.txt", "w");
-          fwrite(dptr->d_name,DATASIZE,1,file);
-        }
+      for(i = 0; i < n_entry; i++){
+          printf("%s \n",filename[i]->d_name);
+          dprintf(fdl,"%s\n",filename[i]->d_name);
+      }
 
-        // Chiudo lo stream-diretory
-        if(closedir(dp) == -1)
-          printf("server:closedir");
-          exit(-1);
-     }
-    /*Dealloca il vettore di strutture dirent*/
-    free(dptr);
+      closedir(dirp);
+      dirp = NULL;
 
-    //RILASCIO IL MUTEX
-    if(pthread_mutex_unlock(&mtx) != 0)
-          exit_on_error("server:pthread_mutex_unlock");
-
-
-    //ORA DEVO INVIARE RITORNARE IL "FILE" CONTENENTE
-    //IL CONTENUTO DELLA DIRECTORY (PATH).
-    //NEL MAIN L'INVIO DEL PACCHETTO È
-    //SOLO DI char *res ( PACCHETTO SINGOLO)
-    //deve inviare list.txt
-    //...TO BE CONTINUED
+    //LASCIO IL MUTEX
+    check(pthread_mutex_unlock(&mtxlist),"server:pthread_mutex_lock");
 
 }
 
+void managelist() {
+    char *res = malloc(((DATASIZE)-1)*sizeof(char)); // client has to put \0 at the end
+    char **resptr = &res;
+    struct pkt listpkt;
+
+    Createlist(resptr, spath);
+    //DEVO INVIARE IL FILE list.txt,INVECE CHE RES?************************************************
+    listpkt = makepkt(CARGO, nextseqnum, 1, 1, strlen(res), res);
+printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
+    check(sendto(sockd, &listpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)), "main:sendto");
+}
+
+/*
+ *  function: setop
+ *  ----------------------------
+ *  Serve client request
+ *
+ *  opdata: client packet and client adddress
+ *
+ *  return: 1 on successfull operation
+ *  error: 0
+ */
+}
 
 int main(int argc, char const* argv[]) {
     char *spath = DEFAULT_PATH; // root folder for server
@@ -127,8 +118,10 @@ printf("[Server] Root folder: %s\n", spath);
     setsock();
     cpacket = (struct pkt *)check_mem(malloc(sizeof(struct pkt)), "main:malloc:cpacket");
     len = sizeof(cliaddr);
-
-    if (pthread_mutex_init(&mtx,NULL) != 0) {
+    //pthread mtxlist Init
+    check(pthread_mutex_init(&mtxlist,NULL) ,"pthread_init");
+    
+    if (pthread_mutex_init(&mtxlist,NULL) != 0) {
       printf("Errore nella pthread_mutex_init \n");
       exit(-1);
     }
