@@ -252,11 +252,12 @@ ssize_t writen(int fd, const void *vptr, size_t n){
  *
  *  addr: address of contacting end point
  *  seconds: time for timeout
+ *  is_server: flag for bind()
  *
  *  return: descriptor of a new socket
  *  error: -1
  */
-int setsock(struct sockaddr_in addr, int seconds){
+int setsock(struct sockaddr_in addr, int seconds, int is_server){
     int sockd = -1;
     struct timeval tout;
 
@@ -267,7 +268,9 @@ int setsock(struct sockaddr_in addr, int seconds){
     // addr->sin_port = htons(port);
     // addr->sin_addr.s_addr = htonl(INADDR_ANY);
     // check(inet_pton(AF_INET, address, &addr->sin_addr), "setsock:inet_pton");
-    check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
+    if(!is_server){
+        check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
+    }
 
     tout.tv_sec = seconds;
     tout.tv_usec = 0;
