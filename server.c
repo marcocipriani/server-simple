@@ -109,6 +109,7 @@ transmit:
 
     sendto(sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
     //nextseqnum++;//LA RITRASMISSIONE NON DEVE ALZARLO
+    //lock timer
     if (cargo->timer == 0){
         timer=1;
       //avvia sampleRTT
@@ -169,11 +170,12 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initi
           }
       }
     }
-    if(cargo->ack_counters[sendpkt.seq-initialseq/*pktleft if setted to seq_relative*/]>0){
+    //se non ho ricevuto niente da rcvfrom
+    if(cargo->ack_counters[sendpkt.seq-initialseq/*pktleft if setted to seq_relative*/]>0){ //se il pkt che ho inviato è stato ackato trasmetto uno nuovo
       check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
       goto transmit;
     }
-    else{
+    else{       //se il mio pkt non è stato ackato continuo ad aspettare l'ack
       check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
       goto check_ack;
     }
@@ -186,20 +188,27 @@ int get(int iseq, int numpkt, char *filename) { // iseq=11,iack=31,numpkt=10,fil
     int i, j, k, z;
     pthread_t *tid;
     int *counter;
-    int aux;
+    int aux,oldBase;
     char *dati;
-    int init = iseq;
     pthread_mutex_t mtxStack,mtxAck_counter;
     int semTimer,semPkt_to_send;
+    struct thread_info t_info;
+    pid_t pid;
+    int init = iseq;
+    int base = init;
+    int *timer;
+    double *estimatedRTT, *timeout_Interval;
+    struct timespec *startRTT;
 
-
-	check_mem(memset(ack.data, 0, ((DATASIZE) * sizeof(char))), "GET-server:memset:ack-client");
+	  check_mem(memset(ack.data, 0, ((DATASIZE) * sizeof(char))), "GET-server:memset:ack-client");
     check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "GET-server:recvfrom ack-client");
 printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, ack.data);
     if (strcmp(ack.data, "ok") == 0) { /* ho ricevuto ack positivo dal client */
 printf("[SERVER] Connection established \n");
 
+        pid = getpid();
         CellaPila stackPtr = NULL;
+        *timeout_Interval=TIMEINTERVAL;
 
         fd = open(filename, O_RDONLY, 00700); // apertura file da inviare
         if(fd == -1){ /*file non aperto correttamente*/
@@ -257,8 +266,28 @@ printf("%c", sendpkt[j].thpkt.data[z]);
             semTimer=check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"GET: semget semTimer"); //inizializzazione SemTimer
             check(semctl(semTimer,0,SETVAL,0), "GET: semctl semTimer");
 
-            semPkt_to_send=check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"GET: semget semPkt_to_sendr"); //inizializzazione semPkt_to_send
+            semPkt_to_send=check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"GET: semget semPkt_to_send"); //inizializzazione semPkt_to_send
             check(semctl(semPkt_to_send,0,SETVAL,numpkt), "GET: semctl semPkt_to_send");
+
+            //preparo il t_info da passare ai thread
+
+            t_info.stack = stackPtr;
+            t_info.semLoc = semPkt_to_send;
+            t_info.semTimer = semTimer;
+            t_info.mutex_stack = mtxStack;
+            t_info.mutex_ack_counter = mtxAck_counter;
+            t_info.ack_counters = counter;
+            t_info.base = &base;
+            t_info.initialseq = init;
+            t_info.numpkt = numpkt;
+            t_info.sockid = sockd; //per ora
+            t_info.timer = timer;
+            t_info.estimatedRTT = estimatedRTT;
+            t_info.start = &startRTT;
+            //t_info.end = endRTT;
+            t_info.timeout_Interval = &timeout_Interval;
+            t_info.father_pid = pid;
+
 
 
             for(j=0;j<WSIZE;j++)
@@ -275,13 +304,23 @@ printf("server:ERRORE pthread_create GET in main");
             oper.sem_op = -1;
             oper.sem_flag = SEM_UNDO;
 
-            check(semop(SemTimer,&oper,1),"THREAD: error wait SemTimer");   //WAIT su semTimer
-            /*int control=base;
-            sleep(Timeout_Interval)
-            if p[control - initialseq]==0 //if (control==base)   //RITRASMISSIONE
+            check(semop(semTimer,&oper,1),"THREAD: error wait semTimer");   //WAIT su semTimer
+
+            int oldBase=base;
+            usleep(*timeout_Interval);
+            if (counter[oldBase - initialseq]==0) //if (control==base)   //RITRASMISSIONE
               push(&stackPtr,send[control - initialseq])  //o handler()signal(sem_ppkts_to_send)
-            lock timer   timer=0   unlock timer
-          }*/
+
+              oper.sem_num = 0;                                                 //se RITRASMISSIONE
+              oper.sem_op = 1;                                                  //signal a semPkt_to_send
+              oper.sem_flag = SEM_UNDO;
+
+              check(semop(semPkt_to_send,&oper,1),"GET: error signal semLocal ");
+
+              //lock timer
+              *timer=0;
+              //unlock timer
+          }
 
 
         // controllo che siano stati ricevuti tutti gli ACK

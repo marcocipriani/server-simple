@@ -48,18 +48,18 @@ struct thread_info{
     int semTimer;
     pthread_mutex_t mutex_stack;
     pthread_mutex_t mutex_ack_counter;
+    //pthread_mutex_t mutex_rtt;
     int *ack_counters;      //contatore di ack
     int *base;               //numero sequenza in push_base
     int initialseq;         //numero di sequenza iniziale
     int numpkt;
     int sockid;             //socket a cui spedire pkt
-    int timer;
+    int *timer;
     double *estimatedRTT;
-    double *sampleRTT;
+    struct timespec *startRTT;
+    //struct timespec *endRTT;
     double *timeout_Interval;
     pid_t father_pid;       //pid del padre
-
-
 };
 
 struct stackNode{
