@@ -41,11 +41,6 @@ struct elab2{
     struct pkt thpkt;
 };
 
-struct elab3{
-    struct pkt oper;
-    int sockd;
-};
-
 /*
  *  function: makepkt
  *  ----------------------------
@@ -127,11 +122,11 @@ int calculate_numpkts(char *pathname){
  */
 int freespacebuf(int totpkt){
     size_t totpktsize;
-    char rcvbuf[DATASIZE]; // obsolete
+    char rcvbuf[DATASIZE];
     int res;
 
     totpktsize = (size_t) (totpkt*sizeof(char))*(DATASIZE*sizeof(char));
-    res = sizeof(rcvbuf)-totpktsize; // obsolete
+    res = sizeof(rcvbuf)-totpktsize;
     if(res >=0){
         return 1;
     }else{
