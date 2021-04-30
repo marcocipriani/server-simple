@@ -326,7 +326,7 @@ int setop(struct elab opdata) {
 printf("[Server pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
 printf("[Server pid:%d sockd:%d] Waiting for synack in %d seconds...\n", SERVER_TIMEOUT, me, opersd);
-    recvfrom(opersd, &synack, DATASIZE, 0, (struct sockaddr *)&opdata.cliaddr, &len);
+    recvfrom(opersd, &synack, MAXTRANSUNIT, 0, (struct sockaddr *)&opdata.cliaddr, &len);
 printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
 
     if(synack.op == ACK_NEG){
@@ -346,7 +346,6 @@ int main(int argc, char const *argv[]) {
     pthread_t tid;
     int ongoing_operations;
     char *spath = DEFAULT_PATH; // root folder for server
-    char *filename, *localpathname;
 
     /*** Usage ***/
     if (argc > 2) {
@@ -372,7 +371,7 @@ printf("Root folder: %s\n", spath);
         check_mem(memset(&synop, 0, sizeof(struct pkt)), "main:memset:synop");
 
 printf("[Server pid:%d sockd:%d] Waiting for synop...\n", me, connsd);
-        check(recvfrom(connsd, &synop, HEADERSIZE + DATASIZE, 0, (struct sockaddr *)&cliaddr, &len), "main:rcvfrom:synop");
+        check(recvfrom(connsd, &synop, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "main:rcvfrom:synop");
 printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, connsd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, synop.data);
 
         // TODO if ongoing_operations >= BACKLOG send negative ack and goto recvfrom synop
