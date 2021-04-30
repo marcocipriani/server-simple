@@ -109,17 +109,18 @@ transmit:
 
     sendto(sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
     //nextseqnum++;//LA RITRASMISSIONE NON DEVE ALZARLO
-    //lock timer
-    if (cargo->timer == 0){
-        timer=1;
+    //---->lock timer (try lock)
+    if (cargo->timer == 0){       //avviso il padre di dormire per timeout_Interval
+      //----->lock timer
+      timer=1;
       //avvia sampleRTT
       oper.sem_num = 0;
       oper.sem_op = 1;                                                  //signal a semTimer
       oper.sem_flag = SEM_UNDO;
 
       check(semop(semTimer,&oper,1),"THREAD: error signal semTimer");
-
-
+      //unlock timer
+    }
 check_ack:
     n=recvfrom(sockd, &rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len);
 
@@ -198,7 +199,7 @@ int get(int iseq, int numpkt, char *filename) { // iseq=11,iack=31,numpkt=10,fil
     int base = init;
     int *timer;
     double *estimatedRTT, *timeout_Interval;
-    struct timespec *startRTT;
+    struct sample *startRTT;
 
 	  check_mem(memset(ack.data, 0, ((DATASIZE) * sizeof(char))), "GET-server:memset:ack-client");
     check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "GET-server:recvfrom ack-client");
@@ -283,7 +284,7 @@ printf("%c", sendpkt[j].thpkt.data[z]);
             t_info.sockid = sockd; //per ora
             t_info.timer = timer;
             t_info.estimatedRTT = estimatedRTT;
-            t_info.start = &startRTT;
+            t_info.startRTT = startRTT;
             //t_info.end = endRTT;
             t_info.timeout_Interval = &timeout_Interval;
             t_info.father_pid = pid;

@@ -124,7 +124,7 @@ int get(int iseq, void *pathname, int pktleft){
     int fd;
     size_t filesize;
     int npkt,edgepkt;
-    int pos,lastpktsize;
+    int pos,lastpktsize,rcv_base,rltv_base;
     char *localpathname;
     struct pkt cargo;
 
@@ -134,6 +134,8 @@ int get(int iseq, void *pathname, int pktleft){
 
     npkt = pktleft;
     edgepkt=npkt; /*#pkt totali del file da ricevere SOLUZIONE: do + while!!!*/
+    rcv_base=initseqserver; //per ora initseqserver è globale
+    rltv_base=1;
 
     if(freespacebuf(npkt)){
 
@@ -146,20 +148,29 @@ printf("cargo->seq: %d \n",cargo.seq);
 printf("initseqserver: %d \n",initseqserver);
 printf("pos: %d \n",pos);
 
-            if(pos>edgepkt && pos<0){
+            if(pos>edgepkt && pos<0){   //PKT FUORI INTERVALLO
 printf("numero sequenza pacchetto ricevuto fuori range \n");
                 return 0;
-            } else if((rcvbuf[pos*(DATASIZE)])==0){ // sono nell'intervallo corretto
-            	printf("VALORE PACCHETTO %d \n",(initseqserver+edgepkt-1));
+            }
+            else if((rcvbuf[pos*(DATASIZE)])==0){ // PKT NELL'INTERVALLO CORRETTO E NON ANCORA RICEVUTO
+//printf("VALORE PACCHETTO %d \n",(initseqserver+edgepkt-1));
                 if(cargo.seq == (initseqserver+edgepkt-1)){
                     lastpktsize = cargo.size;
                 }
                 memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
-                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
+                if(cargo.seq == rcv_base){
+                    sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft/*numpkt-(cargo.seq-initseqserver)*/, "ok");
+                    rcv_base++;
+                }
+                else{   //teoricamente se cargo.seq>rcv_base
+                    sendack(sockd, ACK_POS, rcv_base - 1,  numpkt - (rcv_base - initseqserver), "ok");
+                }
 printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
-            }else{
-            	printf("pacchetto già ricevuto, posso scartarlo \n");
-                sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
+            }
+            else{           //PKT NELL'INTERVALLO CORRETTO MA GIA' RICEVUTO
+printf("pacchetto già ricevuto, posso scartarlo \n");
+                //sendack(sockd, ACK_POS, cargo.seq, cargo.pktleft, "ok");
+                sendack(sockd, ACK_POS, rcv_base - 1, numpkt - (rcv_base - initseqserver), "ok");
                 goto receiver; // il pacchetto viene scartato
             }
             npkt--;

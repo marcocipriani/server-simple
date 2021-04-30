@@ -42,6 +42,11 @@ struct elab2{
     struct pkt thpkt;
 };
 
+struct sample{
+  struct timespec start;
+  int seq;
+};
+
 struct thread_info{
     struct Cellapila stack; //puntatore a Pila
     int semLoc;              //descrittore semaforo local
@@ -56,7 +61,7 @@ struct thread_info{
     int sockid;             //socket a cui spedire pkt
     int *timer;
     double *estimatedRTT;
-    struct timespec *startRTT;
+    struct sample *startRTT;
     //struct timespec *endRTT;
     double *timeout_Interval;
     pid_t father_pid;       //pid del padre
