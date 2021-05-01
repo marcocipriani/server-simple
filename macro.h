@@ -27,3 +27,6 @@
 #define ACK_POS 4
 #define ACK_NEG 5
 #define CARGO 6
+
+#define SIGRETRANSMIT SIGUSR1
+#define SIGLASTACK SIGUSR2

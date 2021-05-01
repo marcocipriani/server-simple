@@ -65,35 +65,36 @@ int freespacebuf2(int totpkt) {
 //input:puntatore a pila,sem(pkts_to_send),ack_counters,base,nextseqnum,initialseq(not required if pktlft->seq relative),sockd
 //timer, estimatedRTT..pid padre
 void *thread_sendpkt(void *arg) {
-    struct sender_info *cargo;//t_info
+    struct sender_info cargo;//t_info
     struct pkt sndpkt, rcvack;
 
     //int me;
     int k,n;
+    int base;
     union sigval retransmit_info;
     struct sembuf oper;
-    cargo = (struct sender_info *)arg;
+    cargo = (struct sender_info)&arg;
     // TODO change ptr->aritmetic
 
-    int opersd = cargo.//TMPsockd
+    int opersd;// = cargo.//TMPsockd
 
 transmit:
     oper.sem_num = 0;
     oper.sem_op = -1;
     oper.sem_flg = SEM_UNDO;
 
-    check(semop(cargo->semLoc,&oper,1),"THREAD: error wait semLoc");    //wait su semLoc
+    check(semop(cargo.semLoc,&oper,1),"THREAD: error wait semLoc");    //wait su semLoc
 
     oper.sem_num = 0;
     oper.sem_op = -1;
     oper.sem_flg = SEM_UNDO;
 
-    check(semop(cargo->semLoc,&oper,1),"THREAD: error wait global");    //wait su semGlob
+    check(semop(cargo.semLoc,&oper,1),"THREAD: error wait global");    //wait su semGlob
 
-    check(pthread_mutex_lock(&cargo->mutex_stack),"THREAD: error lock Stack");      //lock sulla struct stack_elem
-    sndpkt = pop_pkt((struct pktstack)&cargo->stack);
+    check(pthread_mutex_lock(&cargo.mutex_stack),"THREAD: error lock Stack");      //lock sulla struct stack_elem
+    sndpkt = pop_pkt(cargo.stack);
     if (sndpkt==NULL){    //INVALID OPERATION
-        check(pthread_mutex_unlock(&cargo->mutex_stack),"THREAD: error unlock Stack");//unlock pila
+        check(pthread_mutex_unlock(&cargo.mutex_stack),"THREAD: error unlock Stack");//unlock pila
 
         oper.sem_num = 0;
         oper.sem_op = 1;
@@ -110,20 +111,20 @@ transmit:
 
     check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global");
 
-    check(pthread_mutex_unlock(&cargo->mutex_stack),"THREAD: error unlock Stack");   //unlock struct stack_elem
+    check(pthread_mutex_unlock(&cargo.mutex_stack),"THREAD: error unlock Stack");   //unlock struct stack_elem
 
     sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)); // TMP cliaddr parsed from sender_info
     //nextseqnum++;//LA RITRASMISSIONE NON DEVE ALZARLO
     //---->lock timer (try lock)
-    if (cargo->timer == 0){       //avviso il padre di dormire per timeout_Interval
+    if (cargo.timer == 0){       //avviso il padre di dormire per timeout_Interval
       //----->lock timer
-      *(cargo->timer)=1;  //corretto scritto cosi?
+      *(cargo.timer)=1;  //corretto scritto cosi?
       //avvia sampleRTT
       oper.sem_num = 0;
       oper.sem_op = 1;                                                  //signal a semTimer
       oper.sem_flg = SEM_UNDO;
 
-      check(semop(cargo->semTimer,&oper,1),"THREAD: error signal semTimer");
+      check(semop(cargo.semTimer,&oper,1),"THREAD: error signal semTimer");
       //unlock timer
     }
 check_ack:
@@ -168,7 +169,8 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initi
 
               check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
               retransmit_info.sival_int = (rcvack.ack) - (cargo->initialseq)+1;
-              sigqueue(cargo->father_pid, SIGRETRANSMIT, retransmit_info);
+              // sigqueue(cargo->father_pid, SIGRETRANSMIT, retransmit_info);
+              // signature is sigqueue(pid_t pid, int sig, const union sigval value);
           }
           else {
               (cargo->ack_counters[(rcvack.ack) - (cargo->initialseq)])=(int)(cargo->ack_counters[(rcvack.ack) - (cargo->initialseq)])+1;
@@ -188,9 +190,18 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initi
     }
 }
 
+/*
+ *  function: get
+ *  ----------------------------
+ *  Send file to the client
+ *
+ *  arg: synop packet from client, client address
+ *
+ *  return: -
+ *  error: -
+ */
 // OLD: int iseq, int numpkt, char *filename
-int get(void *arg) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
-    struct pkt ack;
+void get(void *arg) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     struct pkt *sendpkt;
     int fd;
     int i, j, k, z;
@@ -202,14 +213,19 @@ int get(void *arg) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     int semTimer,semPkt_to_send;
     struct sender_info t_info;
     pid_t pid;
-    int init = iseq;
+    int init = initseqserver;
 
-    struct elab opdata = (struct elab)&arg;
-
+    struct elab synop = (struct elab)&arg;
+    struct pkt synack;
     int opersd;
-    check(opersd = setop(&ack, opdata)), "get:setop");
 
-    // parse these from ack: int iseq, int numpkt, char *filename
+    opersd = setop(&synack, synop);
+    if(opersd < 0){
+        printf("Operation op:%d seq:%d unsuccessful\n", synop.op, synop.seq);
+        pthread_exit(NULL);
+    }
+
+    // parse these from synack: int iseq, int numpkt, char *filename
 
     int base = init;
     int *timer;

@@ -112,8 +112,8 @@ struct sender_info{
 };
 
 struct receiver_info{
-    int deleteme; // just to avoid compile errors
-}
+    int numpkts; // total packets of the file to be received
+};
 
 /*
  *  function: makepkt
@@ -201,8 +201,8 @@ int freespacebuf(index_stack buf_index){
     char rcvbuf[DATASIZE];
     int res;
 
-    totpktsize = (size_t) (totpkt*sizeof(char))*(DATASIZE*sizeof(char));
-    res = sizeof(rcvbuf)-totpktsize;
+    //totpktsize = (size_t) (totpkt*sizeof(char))*(DATASIZE*sizeof(char));
+    //res = sizeof(rcvbuf)-totpktsize;
     if(res >=0){
         return 1;
     }else{
