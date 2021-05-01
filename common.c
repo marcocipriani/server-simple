@@ -47,49 +47,13 @@ struct sample{
   int seq;
 };
 
-struct thread_info{
-    struct Cellapila stack; //puntatore a Pila
-    int semLoc;              //descrittore semaforo local
-    int semTimer;
-    pthread_mutex_t mutex_stack;
-    pthread_mutex_t mutex_ack_counter;
-    //pthread_mutex_t mutex_rtt;
-    int *ack_counters;      //contatore di ack
-    int *base;               //numero sequenza in push_base
-    int initialseq;         //numero di sequenza iniziale
-    int numpkt;
-    int sockid;             //socket a cui spedire pkt
-    int *timer;
-    double *estimatedRTT;
-    struct sample *startRTT;
-    //struct timespec *endRTT;
-    double *timeout_Interval;
-    pid_t father_pid;       //pid del padre
-};
-
 struct stackNode{
-  struct pkt packet;
-  struct stackNode *nextPtr;
+    struct pkt packet;
+    struct stackNode *nextPtr;
 };
+typedef struct stackNode Pila; // TODO typedef and definition can be unified?
 
-typedef struct stackNode Pila;
 typedef Pila *CellaPila;
-
-/*
- *  function: makepkt
- *  ----------------------------
- *  Create a packet to send
- *
- *  op: SYNOP_ABORT, SYNOP_LIST, SYNOP_GET, SYNOP_PUT, ACK_POS, ACK_NEG, CARGO
- *  seq: sequence number
- *  ack: sequence number of an acknowledged packet
- *  pktleft: how many cargo packets the operation should use
- *  size: length of data field
- *  data: payload
- *
- *  return: a packet with parameters
- *  error:
- */
 
 void push(CellaPila *topPtr, struct pkt data){
     CellaPila newPtr;     //puntatore al nuovo nodo
@@ -117,6 +81,41 @@ struct pkt pop(CellaPila *topPtr){
     return popValue;
 }
 
+struct thread_info{
+    struct Cellapila stack; //puntatore a Pila
+    int semLoc;              //descrittore semaforo local
+    int semTimer;
+    pthread_mutex_t mutex_stack;
+    pthread_mutex_t mutex_ack_counter;
+    //pthread_mutex_t mutex_rtt;
+    int *ack_counters;      //contatore di ack
+    int *base;               //numero sequenza in push_base
+    int initialseq;         //numero di sequenza iniziale
+    int numpkt;
+    int sockid;             //socket a cui spedire pkt
+    int *timer;
+    double *estimatedRTT;
+    struct sample *startRTT;
+    //struct timespec *endRTT;
+    double *timeout_Interval;
+    pid_t father_pid;       //pid del padre
+};
+
+/*
+ *  function: makepkt
+ *  ----------------------------
+ *  Create a packet to send
+ *
+ *  op: SYNOP_ABORT, SYNOP_LIST, SYNOP_GET, SYNOP_PUT, ACK_POS, ACK_NEG, CARGO
+ *  seq: sequence number
+ *  ack: sequence number of an acknowledged packet
+ *  pktleft: how many cargo packets the operation should use
+ *  size: length of data field
+ *  data: payload
+ *
+ *  return: a packet with parameters
+ *  error:
+ */
 struct pkt makepkt(int op, int seq, int ack, int pktleft, size_t size, void *data){
     struct pkt packet;
 

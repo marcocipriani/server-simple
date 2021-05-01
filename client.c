@@ -7,7 +7,95 @@ struct sockaddr_in servaddr, cliaddr;
 socklen_t len;
 int nextseqnum,initseqserver;
 void **tstatus;
-char rcvbuf[45000];
+char rcvbuf[(DATASIZE)*CLIENT_RCVBUFSIZE];
+// stack free_cells // which cells of rcvbuf are free
+pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
+
+// input: filename, numpkts, writebase_sem,
+void write_onfile(){
+    int last_write_made = -1; // from 0 to numpkts
+    int n_bytes_to_write = DATASIZE;
+    int fd;
+
+    //fd = open();
+    while(last_write_made < numpkts){
+        wait(writebase_sem);
+//     /lock mutex_rcvbuf
+//     while(fileCounter[lastwriten]!=-1)
+//       k=fileCounter[lastwriten]
+//       if (lastwriten==numpkt)
+//         nByteToWrite=lastpktsize
+//       write(fd,rcvbuf[k],nByteToWrite)
+//       push(fifo pkts, k)
+//       lastwriten++
+//     /unlock mutex_rcvbuf
+    }
+// kill(pid,LASTWRITE)
+}
+
+void receiver(struct thread_info shared_transfer_info){
+
+start:
+    wait(shared_transfer_info.stack_sem);
+//     unqueue cargo from coda fifo
+//     /lock mutex_rcvbuf
+//     if fileCounter[(cargo.seq - initialseq)]==-1
+//       POP on stack free index      //è possibile poppare piu posizioni????
+//       insert on buff[free index]
+//       counterFile[cargo.seq-initialseq]=free index;
+//       if(cargo.seq==rcv_base)
+//         while(fileCounter[rcv_base]!=-1)
+//           rcv_base++;
+//         sendack(rcv_base)
+//         /unlock mutex_rcvbuf
+//         signal(semWrite)
+//       else
+//         sendack(rcv_base -1)
+//         /unlock mutex_rcvbuf
+//       goto start
+//     else
+//       sendack(rcv_base -1)
+//       /unlock mutex_rcvbuf
+//       goto start
+
+}
+
+void father(){
+    int rcv_base = 1;
+    int *file_counter;
+    struct pkt synack;
+    // struct stack_node pkts_received;
+    int stack_sem, writebase_sem;
+    // int initialseqserver = 1;
+    struct sigaction lastwrite_act;
+
+    stack_sem = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666));
+    check(semctl(stack_sem, 1, SETVAL,  /* 0-> union semun.val; value for SETVAL */));
+    writebase_sem = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666));
+    check(semctl(writebase_sem, 1, SETVAL, /* 0 -> union semun.val; value for SETVAL */));
+    // setop(&synack);
+    file_counter = check_mem(malloc(synack.pktlft * sizeof(int)));
+    memset(file_counter, -1, synack.pktlft);
+
+    // signal(LASTWRITE,handler)
+    // lastwrite_act.sa_handler
+    //                void     (*sa_sigaction)(int, siginfo_t *, void *);
+    //                sigset_t   sa_mask;
+    //                int        sa_flags;
+    //                void     (*sa_restorer)(void);
+    // sigaction(int signum, &lastwrite_act, struct sigaction *restrict oldact);
+
+    // create child 1 doing receiver passing mega-struct
+    // crete child 2 doing write_onfile passing synack.data
+
+    //   receive:
+    // n=rcvfrom(cargo)
+    //   if(n==0)
+    //     goto receive:
+    //   push on fifo pkt al CHILD 1
+    //   signal(semFifo)
+
+}
 
 /*
  *  function: sendack
