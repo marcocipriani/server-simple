@@ -1,10 +1,12 @@
 #include "common.c"
 #include "macro.h"
 
+int SemSnd_Wndw;
+int sockd; // TODEL sockd->connsd
 int connsd;
 struct sockaddr_in servaddr;
 socklen_t len;
-struct sockaddr_in cliaddr; // TODEL
+struct sockaddr_in cliaddr; // TODEL cliaddr->getpeername(sockd)
 int nextseqnum, initseqserver;
 char *msg;
 char rcvbuf[45000]; // buffer per la put
@@ -60,65 +62,168 @@ int freespacebuf2(int totpkt) {
     }
 }
 
+//input:puntatore a pila,sem(pkts_to_send),ack_counters,base,nextseqnum,initialseq(not required if pktlft->seq relative),sockd
+//timer, estimatedRTT..pid padre
 void *thread_sendpkt(void *arg) {
-    struct elab2 *cargo;
+    struct thread_info *cargo;//t_info
     struct pkt sndpkt, rcvack;
-    int me;
-    int opersd; // TMP passed by arg
-    cargo = (struct elab2 *)arg;
-    me = (cargo->thpkt.seq) - (cargo->initialseq); // numero thread
-    sndpkt = makepkt(5, cargo->thpkt.seq, 0, cargo->thpkt.pktleft, cargo->thpkt.size, cargo->thpkt.data);
-printf("sono il thread # %d \n", me);
-printf("valore del counter[%d] : %d \n", me, cargo->p[me]);
 
-    sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
+    //int me;
+    int k,n;
+    union sigval retransmit_info;
+    struct sembuf oper;
+    cargo = (struct thread_info *)arg;
+    // TODO change ptr->aritmetic
+  
+    int opersd = cargo.//TMPsockd
+
+transmit:
+    oper.sem_num = 0;
+    oper.sem_op = -1;
+    oper.sem_flg = SEM_UNDO;
+
+    check(semop(cargo->semLoc,&oper,1),"THREAD: error wait semLoc");    //wait su semLoc
+
+    oper.sem_num = 0;
+    oper.sem_op = -1;
+    oper.sem_flg = SEM_UNDO;
+
+    check(semop(cargo->semLoc,&oper,1),"THREAD: error wait global");    //wait su semGlob
+
+    check(pthread_mutex_lock(&cargo->mutex_stack),"THREAD: error lock Stack");      //lock sulla Pila
+    sndpkt = pop((struct CellaPila)&cargo->stack);
+    if (sndpkt==NULL){    //INVALID OPERATION
+        check(pthread_mutex_unlock(&cargo->mutex_stack),"THREAD: error unlock Stack");//unlock pila
+
+        oper.sem_num = 0;
+        oper.sem_op = 1;
+        oper.sem_flg = SEM_UNDO;
+
+        check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global");    //signal a semGlobal
+
+        //serve la wait a semLocale??
+        pthread_exit(NULL);
+    }
+    oper.sem_num = 0;                                                 //se pop a buon fine
+    oper.sem_op = 1;                                                  //signal a semGlobal
+    oper.sem_flg = SEM_UNDO;
+
+    check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global");
+
+    check(pthread_mutex_unlock(&cargo->mutex_stack),"THREAD: error unlock Stack");   //unlock Pila
+
+    sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)); // TMP cliaddr parsed from thread_info
+    //nextseqnum++;//LA RITRASMISSIONE NON DEVE ALZARLO
+    //---->lock timer (try lock)
+    if (cargo->timer == 0){       //avviso il padre di dormire per timeout_Interval
+      //----->lock timer
+      *(cargo->timer)=1;  //corretto scritto cosi?
+      //avvia sampleRTT
+      oper.sem_num = 0;
+      oper.sem_op = 1;                                                  //signal a semTimer
+      oper.sem_flg = SEM_UNDO;
+
+      check(semop(cargo->semTimer,&oper,1),"THREAD: error signal semTimer");
+      //unlock timer
+    }
 check_ack:
-    check(recvfrom(opersd, &rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "SERVER-get-thread:recvfrom ack-client");
-    // lock buffer
+    n=recvfrom(opersd, &rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len); // TMP cliaddr parsed from thread_info
+
+    check(pthread_mutex_lock(&cargo->mutex_ack_counter),"THREAD: error lock Ack Counters");
+
 printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ack) - (cargo->initialseq) + 1);
-printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
+printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->ack_counters[(rcvack.ack) - (cargo->initialseq)]);
 
-    if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 0) {
-    cargo->p[(rcvack.ack) - (cargo->initialseq)] = (int)cargo->p[(rcvack.ack) - (cargo->initialseq)] + 1;
-    printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-    // unlock buffer
-
-printf("sono il thread # %d e muoio \n", me);
-pthread_exit(tstatus);
-    } else if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 2) {
-printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
-    (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
-printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-    // unlock buffer
+    if(n>0){
+      if(rcvack.ack-*(cargo->base)>WSIZE || rcvack.ack<base-1){    //ack fuori finestra
+        check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
         goto check_ack;
-    }else{
-        (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
-printf("SONO IMPAZZITO \n");
-printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-    // unlock buffer
-    goto check_ack;
+      }
+      if(rcvack.ack >= base){   //ricevo un ack nella finestra
+          for (k=base;k<=rcvack.ack;k++){
+            //se pktlft=seq relative..da fare
+            cargo->ack_counters[k - (cargo->initialseq)] = (int)cargo->ack_counters[k - (cargo->initialseq)] + 1; //sottraggo il num.seq iniziale
+            cargo->base++; //da controllare
+
+            oper.sem_num = 0;                                                 //se ack in finestra
+            oper.sem_op = 1;                                                  //signal a semGlobal
+            oper.sem_flg = SEM_UNDO;
+
+            check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global at received ack ");
+  printf("valore aggiornato in counter[%d] : %d \n", k - (cargo->initialseq), cargo->ack_counters[k - (cargo->initialseq)]);
+          }
+          check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
+          if(rcvack.ack == cargo->initialseq+cargo->numpkt){//if(rcvack.pktlft==0)
+  printf("GET:Ho riscontrato l'ultimo ack del file\n");
+              kill(cargo->father_pid,SIGLASTACK);  //finito il file-il padre dovrà mandare un ack
+              pthread_exit(NULL);
+          }
+            goto transmit;
+      }
+      else if(rcvack.ack==base-1){    //ack duplicato
+          if ((cargo->ack_counters[(rcvack.ack) - (cargo->initialseq)]) == 2) {
+  printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
+              (cargo->ack_counters[(rcvack.ack) - (cargo->initialseq)]) = 0;//(cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
+  printf("azzero il counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->ack_counters[(rcvack.ack) - (cargo->initialseq)]);
+
+              check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
+              retransmit_info.sival_int = (rcvack.ack) - (cargo->initialseq)+1;
+              sigqueue(cargo->father_pid, SIGRETRANSMIT, retransmit_info);
+          }
+          else {
+              (cargo->ack_counters[(rcvack.ack) - (cargo->initialseq)])=(int)(cargo->ack_counters[(rcvack.ack) - (cargo->initialseq)])+1;
+              check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
+              goto check_ack;
+          }
+      }
+    }
+    //se non ho ricevuto niente da rcvfrom
+    if(cargo->ack_counters[sndpkt.seq-thread_info->initialseq/*pktleft if setted to seq_relative*/]>0){ //se il pkt che ho inviato è stato ackato trasmetto uno nuovo
+      check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
+      goto transmit;
+    }
+    else{       //se il mio pkt non è stato ackato continuo ad aspettare l'ack
+      check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
+      goto check_ack;
     }
 }
 
-int get(int iseq, int numpkt, char *filename) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
+// OLD: int iseq, int numpkt, char *filename
+int get(void *arg) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     struct pkt ack;
-    struct elab2 *sendpkt;
+    struct pkt *sendpkt;
     int fd;
     int i, j, k, z;
     pthread_t *tid;
     int *counter;
-    int aux;
+    int aux,oldBase;
     char *dati;
+    pthread_mutex_t mtxStack,mtxAck_counter;
+    int semTimer,semPkt_to_send;
+    struct thread_info t_info;
+    pid_t pid;
     int init = iseq;
-    int opersd; // TMP returned from setop
+  
+    struct elab opdata = (struct elab)&arg;
+  
+    int opersd;
+    check(opersd = setop(&ack, opdata)), "get:setop");
+  
+    // parse these from ack: int iseq, int numpkt, char *filename
 
+    int base = init;
+    int *timer;
+    double *estimatedRTT, *timeout_Interval;
+    struct sample *startRTT;
+    struct sembuf oper;
 
-	check_mem(memset(ack.data, 0, ((DATASIZE) * sizeof(char))), "GET-server:memset:ack-client");
-    check(recvfrom(opersd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "GET-server:recvfrom ack-client");
-printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, ack.data);
+    // TODEL
     if (strcmp(ack.data, "ok") == 0) { /* ho ricevuto ack positivo dal client */
 printf("[SERVER] Connection established \n");
 
+        pid = getpid();
+        CellaPila stackPtr = NULL;
+        *timeout_Interval=TIMEINTERVAL;
 
         fd = open(filename, O_RDONLY, 00700); // apertura file da inviare
         if(fd == -1){ /*file non aperto correttamente*/
@@ -127,7 +232,7 @@ printf("[SERVER] Problem opening file %s \n", filename);
         }
 
 printf("inizio trasferimento \n");
-        sendpkt = malloc((numpkt) * sizeof(struct elab2)); /*Alloca la memoria per thread che eseguiranno la get */
+        sendpkt = malloc((numpkt) * sizeof(struct pkt)); /*Alloca la memoria per thread che eseguiranno la get */
         if(sendpkt == NULL){
 printf("server: ERRORE malloc sendpkt del file %s", filename);
             exit(EXIT_FAILURE);
@@ -139,7 +244,7 @@ printf("server: errore malloc contatore ack \n");
             exit(EXIT_FAILURE);
         }
 
-        tid = malloc((numpkt) * sizeof(pthread_t));
+        tid = malloc((WSIZE) * sizeof(pthread_t));
         if (tid == NULL) {
 printf("server: errore malloc contatore ack \n");
             exit(EXIT_FAILURE);
@@ -155,28 +260,84 @@ printf("server: errore malloc contatore ack \n");
 printf("aux %d \n", aux);
 printf("lunghezza dati: %lu\n", strlen((char *)dati));
 
-            sendpkt[j].thpkt = makepkt(5, iseq, 0, numpkt - j, aux, dati);
-printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].thpkt.size, sendpkt[j].thpkt.pktleft, sendpkt[j].thpkt.data);
-            sendpkt[j].p = counter;
-            sendpkt[j].initialseq = init;
-            for (z = 0; z < 120; z++) {
+            sendpkt[j] = makepkt(5, iseq, 0, numpkt - j, aux, dati);
+printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendpkt[j].pktleft, sendpkt[j].data);
+            /*sendpkt[j].p = counter;
+            sendpkt[j].initialseq = init;*/
+          /*  for (z = 0; z < 120; z++) {
 printf("%c", sendpkt[j].thpkt.data[z]);
-            }
-
-            if(pthread_create(&tid[j], NULL, thread_sendpkt, (void *)&sendpkt[j]) != 0){
-printf("server:ERRORE pthread_create GET in main");
-                exit(EXIT_FAILURE);
-            }
-            memset(dati, 0, DATASIZE);
+}*/         memset(dati, 0, DATASIZE);
             iseq++;
         }
 
-        for(k = 0; k < numpkt; k++){
-printf("sono il padre e aspetto %d thread \n", numpkt - k);
-            pthread_join(tid[k], tstatus);
-            printf("un figlio e' morto \n");
-      }
-printf("tutti i thread hanno finito \n");
+            for (z=numpkt-1; z>=0;z--){
+              push(&stackPtr, sendpkt[z]);
+            }
+
+            check(pthread_mutex_init(&mtxStack,NULL),"GET: errore pthread_mutex_init Pila");
+
+            check(pthread_mutex_init(&mtxAck_counter,NULL),"GET: errore pthread_mutex_init Ack Counters");
+
+            semTimer=check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"GET: semget semTimer"); //inizializzazione SemTimer
+            check(semctl(semTimer,0,SETVAL,0), "GET: semctl semTimer");
+
+            semPkt_to_send=check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"GET: semget semPkt_to_send"); //inizializzazione semPkt_to_send
+            check(semctl(semPkt_to_send,0,SETVAL,numpkt), "GET: semctl semPkt_to_send");
+
+            //preparo il t_info da passare ai thread
+
+            t_info.stack = stackPtr;
+            t_info.semLoc = semPkt_to_send;
+            t_info.semTimer = semTimer;
+            t_info.mutex_stack = mtxStack;
+            t_info.mutex_ack_counter = mtxAck_counter;
+            t_info.ack_counters = counter;
+            t_info.base = &base;
+            t_info.initialseq = init;
+            t_info.numpkt = numpkt;
+            t_info.sockid = sockd; //per ora
+            t_info.timer = timer;
+            t_info.estimatedRTT = estimatedRTT;
+            t_info.startRTT = startRTT;
+            //t_info.end = endRTT;
+            t_info.timeout_Interval = &timeout_Interval;
+            t_info.father_pid = pid;
+
+
+
+            for(j=0;j<WSIZE;j++)
+            if(pthread_create(&tid[j], NULL, thread_sendpkt, (void *)stackPtr) != 0){
+printf("server:ERRORE pthread_create GET in main");
+                exit(EXIT_FAILURE);
+            }
+
+
+          signal(SIGRETRANSMIT,push_base);//usa sigaction
+          //signal(/*stop timer-base aggiornata*/);
+          while((base-initialseq)<=numpkt){
+            oper.sem_num = 0;
+            oper.sem_op = -1;
+            oper.sem_flg = SEM_UNDO;
+
+            check(semop(semTimer,&oper,1),"THREAD: error wait semTimer");   //WAIT su semTimer
+
+            int oldBase=base;
+            usleep(*timeout_Interval);
+            if (counter[oldBase - initialseq]==0){ //if (control==base)   //RITRASMISSIONE
+              push(&stackPtr,send[oldBase - initialseq])  //o handler()signal(sem_ppkts_to_send)
+
+              oper.sem_num = 0;                                                 //se RITRASMISSIONE
+              oper.sem_op = 1;                                                  //signal a semPkt_to_send
+              oper.sem_flg = SEM_UNDO;
+
+              check(semop(semPkt_to_send,&oper,1),"GET: error signal semLocal ");
+
+              //lock timer
+              *timer=0;
+              //unlock timer
+            }
+          }
+
 
         // controllo che siano stati ricevuti tutti gli ACK
         for(i = 0; i < numpkt; i++){
@@ -347,6 +508,9 @@ int main(int argc, char const *argv[]) {
     int ongoing_operations;
     char *spath = DEFAULT_PATH; // root folder for server
 
+    char *filename, *localpathname; // TMP?
+    struct sembuf oper; // TMP?
+
     /*** Usage ***/
     if (argc > 2) {
         fprintf(stderr, "Path from argv[1] set, extra parameters are discarded. [Usage]: %s [<path>]\n", argv[0]);
@@ -364,7 +528,12 @@ printf("Root folder: %s\n", spath);
     len = sizeof(struct sockaddr_in);
     ongoing_operations = 0;
 
-    /*** Receiving synop (max BACKLOG) ***/
+    int filesize; // TMP for testing ack status
+
+    SemSnd_Wndw=check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"MAIN: semget global");
+    check(semctl(SemSnd_Wndw,0,SETVAL,WSIZE), "MAIN: semctl global");
+
+   /*** Receiving synop (max BACKLOG) ***/
     while (1) {
         // Reset address and packet of the last operation
         check_mem(memset(&cliaddr, 0, sizeof(struct sockaddr_in)), "main:memset:cliaddr");

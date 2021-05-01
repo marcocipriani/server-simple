@@ -13,6 +13,9 @@
 #include <errno.h>
 #include <pthread.h>
 #include <ctype.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+
 
 #include "macro.h"
 
@@ -39,6 +42,65 @@ struct elab2{
     int initialseq;   //numero sequenza iniziale per un dato file
     int *p;          //puntatore a array di contatori (ricezione ack)
     struct pkt thpkt;
+};
+
+struct sample{
+  struct timespec start;
+  int seq;
+};
+
+struct stackNode{
+    struct pkt packet;
+    struct stackNode *nextPtr;
+};
+typedef struct stackNode Pila; // TODO typedef and definition can be unified?
+
+typedef Pila *CellaPila;
+
+void push(CellaPila *topPtr, struct pkt data){
+    CellaPila newPtr;     //puntatore al nuovo nodo
+
+    newPtr = malloc(sizeof(Pila));
+    if (newPtr != NULL){
+      newPtr->packet = data;
+      newPtr->nextPtr = *topPtr;
+      *topPtr = newPtr;
+    }
+    else{// no space available
+printf("pacchetto %d non inserito nella pila\n",data.seq);
+    }
+}
+
+struct pkt pop(CellaPila *topPtr){
+    CellaPila tempPtr;    //puntatore temporaneo al nodo
+    struct pkt popValue;         //pacchetto rimosso
+
+    tempPtr = *topPtr;
+    popValue = (*topPtr)->packet;
+    *topPtr = (*topPtr)->nextPtr;
+    free(tempPtr);
+
+    return popValue;
+}
+
+struct thread_info{
+    struct Cellapila stack; //puntatore a Pila
+    int semLoc;              //descrittore semaforo local
+    int semTimer;
+    pthread_mutex_t mutex_stack;
+    pthread_mutex_t mutex_ack_counter;
+    //pthread_mutex_t mutex_rtt;
+    int *ack_counters;      //contatore di ack
+    int *base;               //numero sequenza in push_base
+    int initialseq;         //numero di sequenza iniziale
+    int numpkt;
+    int sockid;             //socket a cui spedire pkt
+    int *timer;
+    double *estimatedRTT;
+    struct sample *startRTT;
+    //struct timespec *endRTT;
+    double *timeout_Interval;
+    pid_t father_pid;       //pid del padre
 };
 
 /*

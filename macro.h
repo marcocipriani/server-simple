@@ -2,14 +2,14 @@
 #define SERVER_PORT 5193
 #define SERVER_ADDR "127.0.0.1"
 #define BACKLOG 10
-#define SERVER_BUFSIZE 1024
+#define SERVER_RCVBUFSIZE 30
 #define SERVER_TIMEOUT 60
 #define DEFAULT_PATH "~"
 #define SERVER_FOLDER "./server-files/"
 
 // Client settings
 #define CLIENT_PORT 4193
-#define CLIENT_BUFSIZE 1024
+#define CLIENT_RCVBUFSIZE 30
 #define CLIENT_TIMEOUT 30
 #define CLIENT_FOLDER "./client-files/"
 
@@ -17,6 +17,8 @@
 #define MAXTRANSUNIT 1500
 #define HEADERSIZE 5*sizeof(int)
 #define DATASIZE MAXTRANSUNIT-HEADERSIZE
+#define WSIZE 10
+#define TIMEINTERVAL 500000
 // OP codes
 #define SYNOP_ABORT 0
 #define SYNOP_LIST 1
