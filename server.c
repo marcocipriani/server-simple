@@ -75,24 +75,24 @@ printf("valore del counter[%d] : %d \n", me, cargo->p[me]);*/
 transmit:
     oper.sem_num = 0;
     oper.sem_op = -1;
-    oper.sem_flag = SEM_UNDO;
+    oper.sem_flg = SEM_UNDO;
 
     check(semop(cargo->semLoc,&oper,1),"THREAD: error wait semLoc");    //wait su semLoc
 
     oper.sem_num = 0;
     oper.sem_op = -1;
-    oper.sem_flag = SEM_UNDO;
+    oper.sem_flg = SEM_UNDO;
 
     check(semop(cargo->semLoc,&oper,1),"THREAD: error wait global");    //wait su semGlob
 
     check(pthread_mutex_lock(&cargo->mutex_stack),"THREAD: error lock Stack");      //lock sulla Pila
     sndpkt = pop((struct CellaPila)&cargo->stack);
-    if (sndpkt==NULL){
+    if (sndpkt==NULL){    //INVALID OPERATION
         check(pthread_mutex_unlock(&cargo->mutex_stack),"THREAD: error unlock Stack");//unlock pila
 
         oper.sem_num = 0;
         oper.sem_op = 1;
-        oper.sem_flag = SEM_UNDO;
+        oper.sem_flg = SEM_UNDO;
 
         check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global");    //signal a semGlobal
 
@@ -101,7 +101,7 @@ transmit:
     }
     oper.sem_num = 0;                                                 //se pop a buon fine
     oper.sem_op = 1;                                                  //signal a semGlobal
-    oper.sem_flag = SEM_UNDO;
+    oper.sem_flg = SEM_UNDO;
 
     check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global");
 
@@ -112,13 +112,13 @@ transmit:
     //---->lock timer (try lock)
     if (cargo->timer == 0){       //avviso il padre di dormire per timeout_Interval
       //----->lock timer
-      timer=1;
+      *(cargo->timer)=1;  //corretto scritto cosi?
       //avvia sampleRTT
       oper.sem_num = 0;
       oper.sem_op = 1;                                                  //signal a semTimer
-      oper.sem_flag = SEM_UNDO;
+      oper.sem_flg = SEM_UNDO;
 
-      check(semop(semTimer,&oper,1),"THREAD: error signal semTimer");
+      check(semop(cargo->semTimer,&oper,1),"THREAD: error signal semTimer");
       //unlock timer
     }
 check_ack:
@@ -126,10 +126,10 @@ check_ack:
 
     check(pthread_mutex_lock(&cargo->mutex_ack_counter),"THREAD: error lock Ack Counters");
 printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ack) - (cargo->initialseq) + 1);
-printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
+printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->ack_counters[(rcvack.ack) - (cargo->initialseq)]);
 
     if(n>0){
-      if(rcvack.ack-base>WSIZE || rcvack.ack<base-1){    //ack fuori finestra
+      if(rcvack.ack-*(cargo->base)>WSIZE || rcvack.ack<base-1){    //ack fuori finestra
         check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
         goto check_ack;
       }
@@ -141,7 +141,7 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initi
 
             oper.sem_num = 0;                                                 //se ack in finestra
             oper.sem_op = 1;                                                  //signal a semGlobal
-            oper.sem_flag = SEM_UNDO;
+            oper.sem_flg = SEM_UNDO;
 
             check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global at received ack ");
   printf("valore aggiornato in counter[%d] : %d \n", k - (cargo->initialseq), cargo->ack_counters[k - (cargo->initialseq)]);
@@ -149,7 +149,7 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initi
           check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
           if(rcvack.ack == cargo->initialseq+cargo->numpkt){//if(rcvack.pktlft==0)
   printf("GET:Ho riscontrato l'ultimo ack del file\n");
-              kill(father_pid,SIGLASTACK);  //finito il file-il padre dovrà mandare un ack
+              kill(cargo->father_pid,SIGLASTACK);  //finito il file-il padre dovrà mandare un ack
               pthread_exit(NULL);
           }
             goto transmit;
@@ -172,7 +172,7 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initi
       }
     }
     //se non ho ricevuto niente da rcvfrom
-    if(cargo->ack_counters[sendpkt.seq-initialseq/*pktleft if setted to seq_relative*/]>0){ //se il pkt che ho inviato è stato ackato trasmetto uno nuovo
+    if(cargo->ack_counters[sndpkt.seq-thread_info->initialseq/*pktleft if setted to seq_relative*/]>0){ //se il pkt che ho inviato è stato ackato trasmetto uno nuovo
       check(pthread_mutex_unlock(&cargo->mutex_ack_counter),"THREAD: error unlock Ack Counters");
       goto transmit;
     }
@@ -184,7 +184,7 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initi
 
 int get(int iseq, int numpkt, char *filename) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     struct pkt ack;
-    struct elab2 *sendpkt;
+    struct pkt *sendpkt;
     int fd;
     int i, j, k, z;
     pthread_t *tid;
@@ -200,6 +200,7 @@ int get(int iseq, int numpkt, char *filename) { // iseq=11,iack=31,numpkt=10,fil
     int *timer;
     double *estimatedRTT, *timeout_Interval;
     struct sample *startRTT;
+    struct sembuf oper;
 
 	  check_mem(memset(ack.data, 0, ((DATASIZE) * sizeof(char))), "GET-server:memset:ack-client");
     check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "GET-server:recvfrom ack-client");
@@ -303,24 +304,25 @@ printf("server:ERRORE pthread_create GET in main");
           while((base-initialseq)<=numpkt){
             oper.sem_num = 0;
             oper.sem_op = -1;
-            oper.sem_flag = SEM_UNDO;
+            oper.sem_flg = SEM_UNDO;
 
             check(semop(semTimer,&oper,1),"THREAD: error wait semTimer");   //WAIT su semTimer
 
             int oldBase=base;
             usleep(*timeout_Interval);
-            if (counter[oldBase - initialseq]==0) //if (control==base)   //RITRASMISSIONE
-              push(&stackPtr,send[control - initialseq])  //o handler()signal(sem_ppkts_to_send)
+            if (counter[oldBase - initialseq]==0){ //if (control==base)   //RITRASMISSIONE
+              push(&stackPtr,send[oldBase - initialseq])  //o handler()signal(sem_ppkts_to_send)
 
               oper.sem_num = 0;                                                 //se RITRASMISSIONE
               oper.sem_op = 1;                                                  //signal a semPkt_to_send
-              oper.sem_flag = SEM_UNDO;
+              oper.sem_flg = SEM_UNDO;
 
               check(semop(semPkt_to_send,&oper,1),"GET: error signal semLocal ");
 
               //lock timer
               *timer=0;
               //unlock timer
+            }
           }
 
 
