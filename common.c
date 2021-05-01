@@ -15,7 +15,7 @@
 #include <ctype.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
-
+#include <signal.h>
 
 #include "macro.h"
 
@@ -28,63 +28,71 @@ struct pkt{
         // server ack-list:totalpackets ack-get:totalpackets ack-put:synop.pktleft cargo:relativepktnumber ack-cargo:cargo.pktleft
     int size;
     char data[DATASIZE];
-        // client synop-list:notset synop-get:pathname synop-put:pathname synack:pathname(//TODO or notset?) cargo:data ack-cargo:notset
+        // client synop-list:notset synop-get:pathname synop-put:pathname synack:pathname cargo:data ack-cargo:notset
         // server ack-list:operationstatus ack-get:operationstatus ack-put:operationstatus cargo:data ack-cargo:notset
 };
 
-// used by main thread to pass operation data to father thread
+// used by main thread to pass operation data to function thread
 struct elab{
     struct sockaddr_in cliaddr;
     struct pkt clipacket;
 };
 
+// TODEL after thread_sendpkt changes to thread_info
 struct elab2{
     int initialseq;   //numero sequenza iniziale per un dato file
     int *p;          //puntatore a array di contatori (ricezione ack)
     struct pkt thpkt;
 };
 
+// RTT
 struct sample{
-  struct timespec start;
-  int seq;
+    struct timespec *start;
+    int seq;
 };
 
-struct stackNode{
+struct stack_elem{
     struct pkt packet;
-    struct stackNode *nextPtr;
+    struct stack_elem *next;
 };
-typedef struct stackNode Pila; // TODO typedef and definition can be unified?
+typedef struct stack_elem *pktstack;
 
-typedef Pila *CellaPila;
+void push_pkt(pktstack *topPtr, struct pkt data){
+    pktstack newPtr;     //puntatore al nuovo nodo
 
-void push(CellaPila *topPtr, struct pkt data){
-    CellaPila newPtr;     //puntatore al nuovo nodo
-
-    newPtr = malloc(sizeof(Pila));
+    newPtr = malloc(sizeof(struct stack_elem));
     if (newPtr != NULL){
-      newPtr->packet = data;
-      newPtr->nextPtr = *topPtr;
-      *topPtr = newPtr;
-    }
-    else{// no space available
+        newPtr->packet = data;
+        newPtr->next = *topPtr;
+        *topPtr = newPtr;
+    }else{// no space available
 printf("pacchetto %d non inserito nella pila\n",data.seq);
     }
 }
 
-struct pkt pop(CellaPila *topPtr){
-    CellaPila tempPtr;    //puntatore temporaneo al nodo
-    struct pkt popValue;         //pacchetto rimosso
+struct pkt pop_pkt(pktstack *topPtr){
+    pktstack tempPtr; //puntatore temporaneo al nodo
+    struct pkt popValue; //pacchetto rimosso
 
     tempPtr = *topPtr;
     popValue = (*topPtr)->packet;
-    *topPtr = (*topPtr)->nextPtr;
+    *topPtr = (*topPtr)->next;
     free(tempPtr);
 
     return popValue;
 }
 
-struct thread_info{
-    struct Cellapila stack; //puntatore a Pila
+struct index{
+    int value;
+    struct index *next;
+};
+typedef struct index *index_stack;
+
+// TODO push_index
+// TODO pop_index
+
+struct sender_info{
+    pktstack stack; //puntatore a struct stack_elem
     int semLoc;              //descrittore semaforo local
     int semTimer;
     pthread_mutex_t mutex_stack;
@@ -102,6 +110,10 @@ struct thread_info{
     double *timeout_Interval;
     pid_t father_pid;       //pid del padre
 };
+
+struct receiver_info{
+    int deleteme; // just to avoid compile errors
+}
 
 /*
  *  function: makepkt
@@ -179,10 +191,12 @@ int calculate_numpkts(char *pathname){
  *  ----------------------------
  *  Check if there's enough space in the receiver buffer
  *
- *  return: 1 if it's free
- *  error: 0
+ *  return: quantity of rcvbuf cells are free
+ *  error: -1
  */
-int freespacebuf(int totpkt){
+ // TODO scan free indexes stack
+ // -> int freespacebuf(struct  *free_indexes, int totpkt)
+int freespacebuf(index_stack buf_index){
     size_t totpktsize;
     char rcvbuf[DATASIZE];
     int res;

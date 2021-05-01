@@ -1,8 +1,9 @@
 #include "macro.h"
 #include "common.c"
 
-int sockd;
+int sockd; // TODEL
 struct sockaddr_in main_servaddr, cliaddr;
+struct sockaddr_in cliaddr; //TODEL
 socklen_t len;
 int nextseqnum,initseqserver;
 void **tstatus;
@@ -25,14 +26,14 @@ void write_onfile(){
 //       if (lastwriten==numpkt)
 //         nByteToWrite=lastpktsize
 //       write(fd,rcvbuf[k],nByteToWrite)
-//       push(fifo pkts, k)
+//       push_pkt(fifo pkts, k)
 //       lastwriten++
 //     /unlock mutex_rcvbuf
     }
 // kill(pid,LASTWRITE)
 }
 
-void receiver(struct thread_info shared_transfer_info){
+void receiver(struct sender_info shared_transfer_info){
 
 start:
     wait(shared_transfer_info.stack_sem);
@@ -91,7 +92,7 @@ void father(){
     // n=rcvfrom(cargo)
     //   if(n==0)
     //     goto receive:
-    //   push on fifo pkt al CHILD 1
+    //   push_pkt on fifo pkt al CHILD 1
     //   signal(semFifo)
 
 }
@@ -125,7 +126,8 @@ printf("[Client pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d]
 }
 
 void *thread_sendpkt(int sockd, void *arg){
-    struct elab2 *cargo;
+    struct elab2 *cargo; // = sender_info t_info;
+    // then update common
     struct pkt sndpkt, rcvack;
     int me;
 
@@ -175,15 +177,26 @@ printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initia
  *  return: -
  *  error: -
  */
-void list(int sockd){
+void list(void *arg){
     pid_t me = getpid();
     int n;
     struct pkt listpkt;
     int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
 
+    int sockd;
+    struct pkt synack;
+    char *folder = (char *)arg;
     struct sockaddr child_servaddr;
-    getpeername(sockd, &child_servaddr, &len);
 
+    sockd = setop(&synack, SYNOP_LIST, 0, folder);
+    if(sockd == -1){
+        printf("Operation op:%d seq:%d unsuccessful\n", synack.op, synack.seq);
+        pthread_exit(NULL);
+    }
+
+    check(getpeername(sockd, &child_servaddr, &len), "list:getpeername:child_servaddr");
+
+    // TODO
     n = recvfrom(sockd, &listpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
 printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, sockd, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
 
@@ -191,14 +204,27 @@ printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%
         printf("Available files on server:\n");
             //buffer[n] = '\0';
             fprintf(stdout, "%s", listpkt.data);
+            // lock(client-list.txt)
             write(fd, listpkt.data, listpkt.size);
+            // unlock(client-list.txt)
     }else{
         printf("No available files on server\n");
         write(fd, "No available files on server\n", 30);
     }
 }
 
-int get(int sockd, void *pathname, int pktleft){
+/*
+ *  function: get
+ *  ----------------------------
+ *  Download a file from the server
+ *
+ *  arg: filename to download
+ *
+ *  return: -
+ *  error: -
+ */
+ // OLD int get(int sockd, void *pathname, int pktleft)
+void get(void *arg){
     int fd;
     size_t filesize;
     int npkt,edgepkt;
@@ -206,8 +232,14 @@ int get(int sockd, void *pathname, int pktleft){
     char *localpathname;
     struct pkt cargo;
 
-    struct sockaddr child_servaddr;
-    getpeername(sockd, &child_servaddr, &len);
+    char *filename = (char *)arg;
+    int sockd;
+    struct pkt synack;
+    struct receiver_info;
+
+    sockd = setop(&synack, SYNOP_GET, 0, filename);
+
+    // parse variables to set receiver_info
 
     localpathname = malloc(DATASIZE * sizeof(char));
     sprintf(localpathname, "%s%s", CLIENT_FOLDER, pathname);
@@ -270,9 +302,18 @@ printf("il file %s e' stato correttamente scaricato\n",(char *)pathname);
     }
 }
 
-int put(int sockd, int iseq, int numpkt, char *filename){
-	struct elab2 *sendpkt;
-    int fd;
+/*
+ *  function: put
+ *  ----------------------------
+ *  Upload a file to the server
+ *
+ *  arg: filename to download
+ *
+ *  return: -
+ *  error: -
+ */
+ // OLD int get(int sockd, int iseq, int numpkt, char *filename)
+void put(void *arg){
     int i, j, k, z;
     pthread_t *tid;
     int *counter;
@@ -280,14 +321,20 @@ int put(int sockd, int iseq, int numpkt, char *filename){
     char *dati;
     int init = iseq;
 
-    struct sockaddr child_servaddr;
-    getpeername(sockd, &child_servaddr, &len);
+    char *filename = (char *)arg;
+    int numpkts;
+    struct pkt synack;
+    int sockd;
+    int fd;
+    struct sender_info t_info;
+    struct pkt *sendpkt;
 
-	fd = open(filename, O_RDONLY, 00700); // apertura file da inviare
-	if(fd == -1){ /*file non aperto correttamente*/
-printf("[SERVER] Problem opening file %s \n", filename);
-		exit(EXIT_FAILURE);
-	}
+    numpkts = check(calculate_numpkts(char *filename), "put:calculate_numpkts:filename");
+    sockd = setop(&synack, SYNOP_PUT, numpkts, void *filename);
+
+    fd = check(open(filename, O_RDONLY, 00700), "put:open"); // apertura file da inviare
+
+    // alloc space for all the packets to send and copy them from file
 
 printf("[Client] inizio trasferimento \n");
         sendpkt = malloc((numpkt) * sizeof(struct elab2)); /*Alloca la memoria per thread che eseguiranno la get */
@@ -467,12 +514,6 @@ quickstart:
                 stpcpy(arg, SERVER_FOLDER); // TMP
                 pthread_create(&tid, NULL, list, (void *)arg);
                 pthread_join(tid, NULL); // TMP single-thread app
-                /* LEGACY
-                oper_elab = setop(sockd, SYNOP_LIST, 0, arg);
-                if(oper_elab.sockd > 0){
-                    list(oper_elab.sockd);
-                }
-                */
                 break;
 
             case SYNOP_GET:
@@ -481,23 +522,16 @@ quickstart:
                 fflush_stdin();
                 pthread_create(&tid, NULL, get, (void *)arg);
                 pthread_join(tid, NULL); // TMP single-thread app
-                /* LEGACY
-                oper_elab = setop(sockd, SYNOP_GET, 0, arg);
-                if(oper_elab.sockd > 0){
-                    get(oper_elab.sockd, nextseqnum, arg, totpkt);
-                }
-                */
                 break;
 
             case SYNOP_PUT:
 fselect:
                 printf("Type filename to put and press ENTER: ");
                 fscanf(stdin, "%s", arg);
-        	    sprintf(localpathname, "%s%s", CLIENT_FOLDER, arg);
-// duplicated in put()?, can't pass pktleft unless creating elab struct
+                fflush_stdin();
+                sprintf(localpathname, "%s%s", CLIENT_FOLDER, arg);
                 if(calculate_numpkts(localpathname) < 1){
                     printf("File not found\n");
-                    fflush_stdin();
                     goto fselect;
                 }
                 pthread_create(&tid, NULL, put, (void *)arg);
