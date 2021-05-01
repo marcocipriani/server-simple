@@ -24,13 +24,15 @@ struct pkt{
     int seq;
     int ack;
     int pktleft;
-        // client synop-abort:notset synop-list:notset synop-get:notset synop-put:totalpackets cargo:relativepktnumber ack-list:notset ack-get:notset
-        // server ack-list:totalpackets ack-get:totalpackets ack-put:notset cargo:relativepktnumber
+        // client synop-list:notset synop-get:notset synop-put:totalpackets synack:ack.pktleft cargo:relativepktnumber ack-cargo:cargo.pktleft
+        // server ack-list:totalpackets ack-get:totalpackets ack-put:synop.pktleft cargo:relativepktnumber ack-cargo:cargo.pktleft
     int size;
-    char data[DATASIZE]; // synop: arg, ack:operationstatus (0 ok 1 denied 2 trylater) empty for ack
+    char data[DATASIZE];
+        // client synop-list:notset synop-get:pathname synop-put:pathname synack:pathname(//TODO or notset?) cargo:data ack-cargo:notset
+        // server ack-list:operationstatus ack-get:operationstatus ack-put:operationstatus cargo:data ack-cargo:notset
 };
 
-// TMP
+// used by main thread to pass operation data to father thread
 struct elab{
     struct sockaddr_in cliaddr;
     struct pkt clipacket;
@@ -173,6 +175,28 @@ int calculate_numpkts(char *pathname){
 }
 
 /*
+ *  function: freespacebuf
+ *  ----------------------------
+ *  Check if there's enough space in the receiver buffer
+ *
+ *  return: 1 if it's free
+ *  error: 0
+ */
+int freespacebuf(int totpkt){
+    size_t totpktsize;
+    char rcvbuf[DATASIZE];
+    int res;
+
+    totpktsize = (size_t) (totpkt*sizeof(char))*(DATASIZE*sizeof(char));
+    res = sizeof(rcvbuf)-totpktsize;
+    if(res >=0){
+        return 1;
+    }else{
+        return 0;
+    }
+}
+
+/*
  *  function: check
  *  ----------------------------
  *  Evaluate a function with integer return
@@ -283,39 +307,33 @@ ssize_t writen(int fd, const void *vptr, size_t n){
  *  ----------------------------
  *  Create a socket with defined address (even for server purpose) and timeout
  *
- *  addr: pointer to address to fill
- *  address: address of the host to contact
- *  port: port of the host to contact
+ *  addr: address of contacting end point
  *  seconds: time for timeout
- *  is_server: flag useful for server purpose (address = ANY and bind on a defined port)
+ *  is_server: flag for bind()
  *
  *  return: descriptor of a new socket
- *  error: 0
+ *  error: -1
  */
-int setsock(struct sockaddr_in *addr, char *address, int port, int seconds, int is_server){
-    int sockd;
+int setsock(struct sockaddr_in addr, int seconds, int is_server){
+    int sockd = -1;
     struct timeval tout;
 
     sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
 
-    //check_mem(memset((void *)&addr, 0, sizeof(addr)), "setsock:memset");
-    addr->sin_family = AF_INET;
-    addr->sin_port = htons(port);
-
-    if(is_server){
-        addr->sin_addr.s_addr = htonl(INADDR_ANY);
-
-        check(bind(sockd, (struct sockaddr *)addr, sizeof(struct sockaddr)), "setsock:bind");
-printf("[Server] Ready to accept on port %d (sockd = %d)\n\n", port, sockd);
-    }else{
-        check(inet_pton(AF_INET, address, &addr->sin_addr), "setsock:inet_pton");
-printf("[Client] Ready to contact %s at %d.\n", address, port);
+    // check_mem(memset((void *)&addr, 0, sizeof(addr)), "setsock:memset");
+    // addr->sin_family = AF_INET;
+    // addr->sin_port = htons(port);
+    // addr->sin_addr.s_addr = htonl(INADDR_ANY);
+    // check(inet_pton(AF_INET, address, &addr->sin_addr), "setsock:inet_pton");
+    if(!is_server){
+        check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
     }
 
     tout.tv_sec = seconds;
     tout.tv_usec = 0;
     check(setsockopt(sockd, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout)), "setsock:setsockopt");
 
+printf("Created new socket id:%d family:%d port:%d addr:%d\n", sockd, addr.sin_family, addr.sin_port, addr.sin_addr.s_addr);
     return sockd;
 }
 
