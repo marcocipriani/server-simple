@@ -5,18 +5,18 @@ int sockd; // TODEL
 struct sockaddr_in main_servaddr;
 struct sockaddr_in cliaddr; //TODEL
 socklen_t len;
-int nextseqnum,initseqserver;
+int nextseqnum,initseqserver; // TODEL
 void **tstatus;
 char rcvbuf[(DATASIZE)*CLIENT_RCVBUFSIZE];
 // stack free_cells // which cells of rcvbuf are free
 pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
 
 /*
- *  function: setop
+ *  function: request_op
  *  ----------------------------
  *  Check operation validity with server
  *
- *  opdata: storing synack pkt
+ *  synack: storing synack pkt
  *  cmd: SYNOP_ABORT, SYNOP_LIST, SYNOP_GET, SYNOP_PUT
  *  pktleft: (only for put) how many packets the file is made of
  *  arg: (list) not-used (get) name of the file to get (put) name of the file to put
@@ -24,43 +24,45 @@ pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
  *  return: sockd, synack in opdata param
  *  error: 0
  */
-int setop(struct pkt *opdata, int cmd, int pktleft, void *arg){
-    pid_t me = getpid();
+int request_op(struct pkt *synack, int cmd, int pktleft, char *arg){
+    pid_t me = getpid(); // TODO pthread_self()
     int sockd;
-    struct pkt synop, ack, synack;
+    struct pkt synop, ack;//TODEL, synack;
     struct sockaddr_in child_servaddr;
+    int initseq;
     int n;
 
-    sockd = setsock(main_servaddr, CLIENT_TIMEOUT, 0);
+    sockd = setsock(main_servaddr, CLIENT_TIMEOUT, 1);
 
-    nextseqnum++;
-    synop = makepkt(cmd, nextseqnum, 0, pktleft, strlen((char *)arg), arg);
-sendsynop:
+    initseq = arc4random_uniform(MAXSEQNUM);
+    synop = makepkt(cmd, initseq, 0, pktleft, strlen(arg), arg);
+
 printf("[Client pid:%d sockd:%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
-    check(sendto(sockd, &synop, HEADERSIZE + synop.size, 0, (struct sockaddr *)&main_servaddr, sizeof(struct sockaddr_in)) , "setop:sendto:synop");
+    check(sendto(sockd, &synop, HEADERSIZE + synop.size, 0, (struct sockaddr *)&main_servaddr, sizeof(struct sockaddr_in)) , "request_op:sendto:synop");
 
 printf("[Client pid:%d sockd:%d] Waiting for ack in max %d seconds...\n", me, sockd, CLIENT_TIMEOUT);
-    n = check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len), "setop:recvfrom:ack");
+    n = recvfrom(sockd, (struct pkt *)&ack, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
+
+    if(n==0){
+        // TODO retry op
+        // printf("%d seconds timeout for ack expired\nRetry operation op:%d seq:%d? [Y/n] ", CLIENT_TIMEOUT, synop.op, synop.seq);
+        // fflush_stdin();
+        // if(getchar()=='n'){
+        //     close(sockd); // sockd = 0
+        //     return sockd;
+        // }else{
+        //     goto sendsynop;
+        // }
+printf("No ack response from server\n");
+        close(sockd);
+        return -1;
+    }
 printf("[Client pid:%d sockd:%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
-    if(!n){ // nothing received
-        printf("%d seconds timeout for ack expired\nRetry operation op:%d seq:%d? [Y/n] ", CLIENT_TIMEOUT, synop.op, synop.seq);
-        fflush_stdin();
-        if(getchar()=='n'){
-            close(sockd); // sockd = 0
-            return sockd;
-        }else{
-            goto sendsynop;
-        }
-    }
-    if(ack.op == ACK_NEG && ack.ack == synop.seq){
-        printf("Operation op:%d seq:%d not permitted\nRetry operation? [Y/n] ", synop.op, synop.seq);
-        fflush_stdin();
-        if(getchar()=='n'){
-            close(sockd); // sockd = 0
-        }else{
-            goto sendsynop;
-        }
+    if(ack.op == ACK_NEG){ // TODO  && ack.ack == synop.seq
+printf("Operation on server denied\n");
+        close(sockd);
+        return -1;
     }
 
     if(ack.op == ACK_POS && ack.ack == synop.seq){
@@ -70,16 +72,15 @@ printf("[Client pid:%d sockd:%d] Received ack from server [op:%d][seq:%d][ack:%d
             cmd = ACK_NEG;
         }else{
             cmd = ACK_POS;
-            check(bind(sockd, (struct sockaddr *)&child_servaddr, sizeof(struct sockaddr)), "setop:bind:child_servaddr");
+            //check(bind(sockd, (struct sockaddr *)&child_servaddr, sizeof(struct sockaddr)), "request_op:bind:child_servaddr");
+            check(connect(sockd, (struct sockaddr *)&child_servaddr, len), "request_op:connect:child_servaddr");
         }
 
         nextseqnum++;
-        synack = makepkt(cmd, nextseqnum, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
+        *synack = makepkt(cmd, nextseqnum, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
 
-printf("[Client pid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, (char *)synack.data);
-        check(sendto(sockd, &synack, HEADERSIZE + synack.size, 0, (struct sockaddr *)&child_servaddr, sizeof(struct sockaddr_in)) , "setop:sendto");
-
-        *opdata = synack;
+printf("[Client pid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
+        check(sendto(sockd, &synack, HEADERSIZE + synack->size, 0, (struct sockaddr *)&child_servaddr, sizeof(struct sockaddr_in)) , "request_op:sendto");
     }
 
     return sockd;
@@ -149,7 +150,7 @@ void father(){
     //check(semctl(stack_sem, 1, SETVAL,  /* 0-> union semun.val; value for SETVAL */));
     writebase_sem = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666), "get:semget:writebase_sem");
     //check(semctl(writebase_sem, 1, SETVAL, /* 0 -> union semun.val; value for SETVAL */));
-    // setop(&synack);
+    // request_op(&synack);
     file_counter = check_mem(malloc(synack.pktleft * sizeof(int)), "get:check_mem:file_counter");
     memset(file_counter, -1, synack.pktleft);
 
@@ -264,7 +265,7 @@ void list(void *arg){
     char *folder = (char *)arg;
     struct sockaddr child_servaddr;
 
-    sockd = setop(&synack, SYNOP_LIST, 0, folder);
+    sockd = request_op(&synack, SYNOP_LIST, 0, folder);
     if(sockd == -1){
         printf("Operation op:%d seq:%d unsuccessful\n", synack.op, synack.seq);
         pthread_exit(NULL);
@@ -314,10 +315,10 @@ void get(void *arg){
     struct receiver_info;
     struct sockaddr_in child_servaddr;
 
-    sockd = setop(&synack, SYNOP_GET, 0, filename);
+    sockd = request_op(&synack, SYNOP_GET, 0, filename);
 
     // parse variables to set receiver_info
-    check(getpeername(sockd, &child_servaddr, &len), "get:getpeername:child_servaddr");
+    //check(getpeername(sockd, (struct sockaddr *)&child_servaddr, &len), "get:getpeername:child_servaddr");
 
     localpathname = malloc(DATASIZE * sizeof(char));
     sprintf(localpathname, "%s%s", CLIENT_FOLDER, filename);
@@ -410,7 +411,7 @@ void put(void *arg){
     struct elab2 *sendpkt;
 
     numpkts = check(calculate_numpkts(filename), "put:calculate_numpkts:filename");
-    sockd = setop(&synack, SYNOP_PUT, numpkts, filename);
+    sockd = request_op(&synack, SYNOP_PUT, numpkts, filename);
 
     fd = check(open(filename, O_RDONLY, 00700), "put:open"); // apertura file da inviare
 
@@ -494,6 +495,8 @@ int main(int argc, char const *argv[]){
     /*** Init ***/
     me = getpid();
 printf("Welcome to server-simple app, client #%d\n", me);
+    len = sizeof(struct sockaddr_in);
+    memset((void *)&main_servaddr, 0, len);
     main_servaddr.sin_family = AF_INET;
     main_servaddr.sin_port = htons(SERVER_PORT);
     check(inet_pton(AF_INET, SERVER_ADDR, &main_servaddr.sin_addr), "main:init:inet_pton");
