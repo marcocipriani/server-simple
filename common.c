@@ -95,6 +95,7 @@ struct sender_info{
     pktstack stack; //puntatore a struct stack_elem
     int semLoc;              //descrittore semaforo local
     int semTimer;
+    pthread_mutex_t mutex_time;
     pthread_mutex_t mutex_stack;
     pthread_mutex_t mutex_ack_counter;
     //pthread_mutex_t mutex_rtt;
