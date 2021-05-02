@@ -4,10 +4,10 @@
 int SemSnd_Wndw;
 int sockd; // TODEL sockd->connsd
 int connsd;
-struct sockaddr_in servaddr;
+struct sockaddr_in listen_addr;
 socklen_t len;
 struct sockaddr_in cliaddr; // TODEL cliaddr->getpeername(sockd)
-int nextseqnum, initseqserver;
+int initseqserver, nextseqnum; // TODEL
 char *msg;
 char rcvbuf[45000]; // buffer per la put
 void **tstatus;
@@ -101,6 +101,7 @@ int serve_op(struct pkt *synack, struct elab opdata) {
     int opersd;
     int pktleft = 0;
     int status_code;
+    int initseq;
     char *status; // [DATASIZE]?
     int n;
 
@@ -109,8 +110,8 @@ int serve_op(struct pkt *synack, struct elab opdata) {
 
     /*** Create ack ***/
     status_code = check_validity(&status, &pktleft, opdata.clipacket.op, opdata.clipacket.data);
-    nextseqnum = arc4random();
-    ack = makepkt(status_code, nextseqnum, opdata.clipacket.seq, pktleft, strlen(status), status);
+    initseq = arc4random();
+    ack = makepkt(status_code, initseq, opdata.clipacket.seq, pktleft, strlen(status), status);
 
     check(sendto(opersd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "setop:sendto:ack");
 printf("[Server pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
@@ -118,7 +119,7 @@ printf("[Server pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d]
     /*** Receive synack (response to ack) from client ***/
 printf("[Server pid:%d sockd:%d] Waiting for synack in %d seconds...\n", SERVER_TIMEOUT, me, opersd);
     n = recvfrom(opersd, synack, MAXTRANSUNIT, 0, (struct sockaddr *)&opdata.cliaddr, &len);
-printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
+printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, synack->data);
 
     if(n==0){
 printf("No synack response from client\n");
@@ -126,7 +127,7 @@ printf("No synack response from client\n");
         return -1;
     }
 
-    if(synack.op == ACK_NEG){
+    if(synack->op == ACK_NEG){
 printf("Client operation aborted\n");
         close(opersd);
         return -1;
@@ -142,19 +143,19 @@ void *thread_sendpkt(void *arg) {
     struct sender_info cargo;//t_info
     struct pkt sndpkt, rcvack;
 
-    //int me;
+    int me;
     int k,n;
     int base;
     union sigval retransmit_info;
     struct sembuf oper;
-    cargo = (struct sender_info)&arg;
+    cargo = (struct sender_info)*arg;
     // TODO change ptr->aritmetic
 
     int opersd=cargo.sockid;
     struct sockaddr cliaddr;
     socklen_t len;
 
-    getpeername(opersd, &servaddr, &len);
+    //getpeername(opersd, &servaddr, &len);
 
 transmit:
     oper.sem_num = 0;
@@ -564,11 +565,11 @@ int main(int argc, char const *argv[]) {
     if (argc > 1) spath = (char *)argv[1];
     me = getpid();
 printf("Root folder: %s\n", spath);
-    memset((void *)&servaddr, 0, sizeof(struct sockaddr_in));
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(SERVER_PORT);
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    connsd = setsock(servaddr, 0, 1);
+    memset((void *)&listen_addr, 0, sizeof(struct sockaddr_in));
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_port = htons(SERVER_PORT);
+    listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    connsd = setsock(listen_addr, 0, 1);
     len = sizeof(struct sockaddr_in);
     ongoing_operations = 0;
 
