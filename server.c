@@ -219,9 +219,9 @@ void get(void *arg) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     struct pkt synack;
     int opersd;
 
-    opersd = setop(&synack, synop);
+    opersd = serve_op(&synack, synop);
     if(opersd < 0){
-        printf("Operation op:%d seq:%d unsuccessful\n", synop.op, synop.seq);
+printf("Operation op:%d seq:%d unsuccessful\n", synop.op, synop.seq);
         pthread_exit(NULL);
     }
 
@@ -479,51 +479,85 @@ printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
 }
 
 /*
+ *  function: check_validity
+ *  ----------------------------
+ *  Check if an operation requested by the client is valid
+ *
+ *  return: ACK_POS on success
+ *  error: ACK_NEG
+ */
+int check_validity(char **status, int *pktleft, int op, char *arg){
+    char *filename, localpathname[strlen(CLIENT_FOLDER) + (DATASIZE)];
+
+    switch (op) {
+        case SYNOP_LIST:
+            *status = "ok"; // TMP
+            break;
+
+        case SYNOP_GET:
+            filename = check_mem(malloc(strlen(arg) * (sizeof(char))), "check_validity:malloc:filename");
+            sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
+            if ((*pktleft = calculate_numpkts(localpathname)) == -1){
+                *status = "File not available";
+printf("Invalid operation on this server\n");
+                return ACK_NEG;
+            }
+            *status = "File available";
+            break;
+
+        case SYNOP_PUT:
+            *status = "ok"; // TMP
+            break;
+    }
+printf("Valid operation on this server\n");
+    return ACK_POS;
+}
+
+/*
  *  function: setop
  *  ----------------------------
  *  Serve client request
  *
+ *  synack: result of the operation establishment
  *  opdata: client packet and client adddress
  *
- *  return: socket id
+ *  return: socket id, synack packet
  *  error: -1
  */
-int setop(struct pkt *synack,struct elab opdata) {
-    pid_t me = getpid();
+int serve_op(struct pkt *synack, struct elab opdata) {
+    pid_t me = getpid(); // TODO pthread_self()
     struct pkt ack;
     int opersd;
-    int pktleft;
-    char *status;
-    char *localpathname,*filename;
+    int pktleft = 0;
+    int status_code;
+    char *status; // [DATASIZE]?
+    int n;
 
-    opersd = setsock(opdata.cliaddr, CLIENT_TIMEOUT, 1);
+    /*** Create socket to perform the operation ***/
+    opersd = check(setsock(opdata.cliaddr, CLIENT_TIMEOUT, 1), "serve_op:setsock:opersd");
 
-    // TODO check operation validity and calculate pktleft and status
-    pktleft = 0; // TMP
-    if(opdata.clipacket.op==SYNOP_GET){
-      filename=malloc(opdata.clipacket.size*(sizeof(char)));
-      localpathname = malloc(DATASIZE * sizeof(char));
-      sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
-      pktleft = calculate_numpkts(localpathname);
-    }
-    if(pktleft>0){
-        status = "ok client"; // TMP
-        nextseqnum++;
-        ack = makepkt(ACK_POS, nextseqnum, opdata.clipacket.seq, pktleft, strlen((char *)status), status);
-    }else{
-        status = "sorry client"; // TMP
-        ack = makepkt(ACK_NEG, nextseqnum, opdata.clipacket.seq, pktleft, strlen((char *)status), status);
-    }
+    /*** Create ack ***/
+    status_code = check_validity(&status, &pktleft, opdata.clipacket.op, opdata.clipacket.data);
+    pktleft = arc4random();
+    ack = makepkt(status_code, nextseqnum, opdata.clipacket.seq, pktleft, strlen(status), status);
 
     check(sendto(opersd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "setop:sendto:ack");
 printf("[Server pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
+    /*** Receive synack (response to ack) from client ***/
 printf("[Server pid:%d sockd:%d] Waiting for synack in %d seconds...\n", SERVER_TIMEOUT, me, opersd);
-    recvfrom(opersd, synack, MAXTRANSUNIT, 0, (struct sockaddr *)&opdata.cliaddr, &len);
+    n = recvfrom(opersd, synack, MAXTRANSUNIT, 0, (struct sockaddr *)&opdata.cliaddr, &len);
 printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
+
+    if(n==0){
+printf("No synack response from client\n");
+        close(opersd);
+        return -1;
+    }
 
     if(synack.op == ACK_NEG){
 printf("Client operation aborted\n");
+        close(opersd);
         return -1;
     }
 
