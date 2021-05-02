@@ -226,22 +226,32 @@ void get(void *arg) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     }
 
     // parse these from synack: int iseq, int numpkt, char *filename
-
+    char *filename;
+    int numpkt=synack.pktleft;
+    int iseq=synac.ack + 1;
     int base = init;
-    int *timer;
-    double *estimatedRTT, *timeout_Interval;
-    struct sample *startRTT;
+    int timer;
+    double estimatedRTT, timeout_Interval;
+    struct sample startRTT;
     struct sembuf oper;
+    struct timespec start;
 
     // TODEL
-    if (strcmp(ack.data, "ok") == 0) { /* ho ricevuto ack positivo dal client */
+    if (strcmp(synack.data, "ok") == 0) { /* ho ricevuto ack positivo dal client */
 printf("[SERVER] Connection established \n");
+
+        startRTT.start=&start;
+        startRTT.seq=-1;
+
+        strncpy(filename,opdata.clipacket.data,opdata.clipacket.size);
+        localpathname = malloc(DATASIZE * sizeof(char));
+        sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
 
         pid = getpid();
         pktstack stackPtr = NULL;
         *timeout_Interval=TIMEINTERVAL;
 
-        fd = open(filename, O_RDONLY, 00700); // apertura file da inviare
+        fd = open(localpathname, O_RDONLY, 00700); // apertura file da inviare
         if(fd == -1){ /*file non aperto correttamente*/
 printf("[SERVER] Problem opening file %s \n", filename);
             exit(EXIT_FAILURE);
@@ -289,7 +299,7 @@ printf("%c", sendpkt[j].thpkt.data[z]);
             for (z=numpkt-1; z>=0;z--){
               push_pkt(&stackPtr, sendpkt[z]);
             }
-
+            /*****INIZIALIZZAZIONE SEMAFORI E MUTEX**********/
             check(pthread_mutex_init(&mtxStack,NULL),"GET: errore pthread_mutex_init struct stack_elem");
 
             check(pthread_mutex_init(&mtxAck_counter,NULL),"GET: errore pthread_mutex_init Ack Counters");
@@ -311,11 +321,10 @@ printf("%c", sendpkt[j].thpkt.data[z]);
             t_info.base = &base;
             t_info.initialseq = init;
             t_info.numpkt = numpkt;
-            t_info.sockid = sockd; //per ora
-            t_info.timer = timer;
-            t_info.estimatedRTT = estimatedRTT;
-            t_info.startRTT = startRTT;
-            //t_info.end = endRTT;
+            t_info.sockid = opersd; //per ora
+            t_info.timer = &timer;
+            t_info.estimatedRTT = &estimatedRTT;
+            t_info.startRTT = &startRTT;
             t_info.timeout_Interval = &timeout_Interval;
             t_info.father_pid = pid;
 
@@ -479,18 +488,25 @@ printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
  *  return: socket id
  *  error: -1
  */
-int setop(struct elab opdata) {
+int setop(struct pkt *synack,struct elab opdata) {
     pid_t me = getpid();
-    struct pkt ack, synack;
+    struct pkt ack;
     int opersd;
     int pktleft;
     char *status;
+    char *localpathname,*filename;
 
     opersd = setsock(opdata.cliaddr, CLIENT_TIMEOUT, 1);
 
     // TODO check operation validity and calculate pktleft and status
     pktleft = 0; // TMP
-    if(pktleft){
+    if(opdata.clipacket.op==SYNOP_GET){
+      filename=malloc(opdata.clipacket.size*(sizeof(char)));
+      localpathname = malloc(DATASIZE * sizeof(char));
+      sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
+      pktleft = calculate_numpkts(localpathname);
+    }
+    if(pktleft>0){
         status = "ok client"; // TMP
         nextseqnum++;
         ack = makepkt(ACK_POS, nextseqnum, opdata.clipacket.seq, pktleft, strlen((char *)status), status);
@@ -503,7 +519,7 @@ int setop(struct elab opdata) {
 printf("[Server pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
 printf("[Server pid:%d sockd:%d] Waiting for synack in %d seconds...\n", SERVER_TIMEOUT, me, opersd);
-    recvfrom(opersd, &synack, MAXTRANSUNIT, 0, (struct sockaddr *)&opdata.cliaddr, &len);
+    recvfrom(opersd, synack, MAXTRANSUNIT, 0, (struct sockaddr *)&opdata.cliaddr, &len);
 printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
 
     if(synack.op == ACK_NEG){
@@ -577,6 +593,12 @@ printf("Passed elab to child %d\n\n", tid);
                 break;
 
             case SYNOP_GET:
+                /*if (!(chec_validate(SYNOP_GET))){
+                check_mem(memset(&ack, 0, sizeof(struct pkt)), "main:get:ack");
+                ack = makepkt(ACK_NEG, nextseqnum, opdata.clipacket.seq, opdata.clipacket.pktleft, strlen("malformed packet"), "malformed packet");
+                check(sendto(connsd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "main:sendto:ack:malformed_packet");
+printf("server: Operation denied \n")
+                }*/
                 pthread_create(&tid, NULL, get, (void *)&opdata);
                 ++ongoing_operations;
 printf("Passed elab to child %d\n\n", tid);
