@@ -11,20 +11,7 @@ int nextseqnum, initseqserver;
 char *msg;
 char rcvbuf[45000]; // buffer per la put
 void **tstatus;
-char *status = "okclient";
 char *spath = SERVER_FOLDER; // root folder for server
-
-void sendack2(int opersd, int op, int cliseq, int pktleft, char *status) {
-    struct pkt ack;
-
-	check_mem(memset(ack.data, 0, ((DATASIZE) * sizeof(char))), "main:memset:cpacket");
-    nextseqnum++;
-    ack = makepkt(op, nextseqnum, cliseq, pktleft, strlen(status), status);
-
-    check(sendto(opersd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)), "sendack2:sendto");
-printf("[Server] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-
-}
 
 /*
 LEGACY
@@ -60,6 +47,93 @@ int freespacebuf2(int totpkt) {
     }else{
     return 0;
     }
+}
+
+/*
+ *  function: check_validity
+ *  ----------------------------
+ *  Check if an operation requested by the client is valid
+ *
+ *  return: ACK_POS on success
+ *  error: ACK_NEG
+ */
+int check_validity(char **status, int *pktleft, int op, char *arg){
+    char *filename, localpathname[strlen(CLIENT_FOLDER) + (DATASIZE)];
+
+    switch (op) {
+        case SYNOP_LIST:
+            *status = "ok"; // TMP
+            break;
+
+        case SYNOP_GET:
+            filename = check_mem(malloc(strlen(arg) * (sizeof(char))), "check_validity:malloc:filename");
+            sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
+            if ((*pktleft = calculate_numpkts(localpathname)) == -1){
+                *status = "File not available";
+printf("Invalid operation on this server\n");
+                return ACK_NEG;
+            }
+            *status = "File available";
+            break;
+
+        case SYNOP_PUT:
+            *status = "ok"; // TMP
+            break;
+    }
+printf("Valid operation on this server\n");
+    return ACK_POS;
+}
+
+/*
+ *  function: serve_op
+ *  ----------------------------
+ *  Serve client request
+ *
+ *  synack: result of the operation establishment
+ *  opdata: client packet and client adddress
+ *
+ *  return: socket id, synack packet
+ *  error: -1
+ */
+int serve_op(struct pkt *synack, struct elab opdata) {
+    pid_t me = getpid(); // TODO pthread_self()
+    struct pkt ack;
+    int opersd;
+    int pktleft = 0;
+    int status_code;
+    char *status; // [DATASIZE]?
+    int n;
+
+    /*** Create socket to perform the operation ***/
+    opersd = check(setsock(opdata.cliaddr, CLIENT_TIMEOUT, 1), "serve_op:setsock:opersd");
+
+    /*** Create ack ***/
+    status_code = check_validity(&status, &pktleft, opdata.clipacket.op, opdata.clipacket.data);
+    nextseqnum = arc4random();
+    ack = makepkt(status_code, nextseqnum, opdata.clipacket.seq, pktleft, strlen(status), status);
+
+    check(sendto(opersd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "setop:sendto:ack");
+printf("[Server pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+
+    /*** Receive synack (response to ack) from client ***/
+printf("[Server pid:%d sockd:%d] Waiting for synack in %d seconds...\n", SERVER_TIMEOUT, me, opersd);
+    n = recvfrom(opersd, synack, MAXTRANSUNIT, 0, (struct sockaddr *)&opdata.cliaddr, &len);
+printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
+
+    if(n==0){
+printf("No synack response from client\n");
+        close(opersd);
+        return -1;
+    }
+
+    if(synack.op == ACK_NEG){
+printf("Client operation aborted\n");
+        close(opersd);
+        return -1;
+    }
+
+printf("Client operation continued\n");
+    return opersd;
 }
 
 //input:puntatore a pila,sem(pkts_to_send),ack_counters,base,nextseqnum,initialseq(not required if pktlft->seq relative),sockd
@@ -478,93 +552,6 @@ printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
     check(sendto(opersd, &listpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)), "main:sendto");
 }
 
-/*
- *  function: check_validity
- *  ----------------------------
- *  Check if an operation requested by the client is valid
- *
- *  return: ACK_POS on success
- *  error: ACK_NEG
- */
-int check_validity(char **status, int *pktleft, int op, char *arg){
-    char *filename, localpathname[strlen(CLIENT_FOLDER) + (DATASIZE)];
-
-    switch (op) {
-        case SYNOP_LIST:
-            *status = "ok"; // TMP
-            break;
-
-        case SYNOP_GET:
-            filename = check_mem(malloc(strlen(arg) * (sizeof(char))), "check_validity:malloc:filename");
-            sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
-            if ((*pktleft = calculate_numpkts(localpathname)) == -1){
-                *status = "File not available";
-printf("Invalid operation on this server\n");
-                return ACK_NEG;
-            }
-            *status = "File available";
-            break;
-
-        case SYNOP_PUT:
-            *status = "ok"; // TMP
-            break;
-    }
-printf("Valid operation on this server\n");
-    return ACK_POS;
-}
-
-/*
- *  function: setop
- *  ----------------------------
- *  Serve client request
- *
- *  synack: result of the operation establishment
- *  opdata: client packet and client adddress
- *
- *  return: socket id, synack packet
- *  error: -1
- */
-int serve_op(struct pkt *synack, struct elab opdata) {
-    pid_t me = getpid(); // TODO pthread_self()
-    struct pkt ack;
-    int opersd;
-    int pktleft = 0;
-    int status_code;
-    char *status; // [DATASIZE]?
-    int n;
-
-    /*** Create socket to perform the operation ***/
-    opersd = check(setsock(opdata.cliaddr, CLIENT_TIMEOUT, 1), "serve_op:setsock:opersd");
-
-    /*** Create ack ***/
-    status_code = check_validity(&status, &pktleft, opdata.clipacket.op, opdata.clipacket.data);
-    pktleft = arc4random();
-    ack = makepkt(status_code, nextseqnum, opdata.clipacket.seq, pktleft, strlen(status), status);
-
-    check(sendto(opersd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "setop:sendto:ack");
-printf("[Server pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-
-    /*** Receive synack (response to ack) from client ***/
-printf("[Server pid:%d sockd:%d] Waiting for synack in %d seconds...\n", SERVER_TIMEOUT, me, opersd);
-    n = recvfrom(opersd, synack, MAXTRANSUNIT, 0, (struct sockaddr *)&opdata.cliaddr, &len);
-printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, synack.op, synack.seq, synack.ack, synack.pktleft, synack.size, synack.data);
-
-    if(n==0){
-printf("No synack response from client\n");
-        close(opersd);
-        return -1;
-    }
-
-    if(synack.op == ACK_NEG){
-printf("Client operation aborted\n");
-        close(opersd);
-        return -1;
-    }
-
-printf("Client operation continued\n");
-    return opersd;
-}
-
 int main(int argc, char const *argv[]) {
     struct pkt synop, ack; // ack only when rejecting packets with bad op code
     struct sockaddr_in cliaddr;
@@ -593,8 +580,6 @@ printf("Root folder: %s\n", spath);
     connsd = setsock(servaddr, 0, 1);
     len = sizeof(struct sockaddr_in);
     ongoing_operations = 0;
-
-    int filesize; // TMP for testing ack status
 
     SemSnd_Wndw=check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"MAIN: semget global");
     check(semctl(SemSnd_Wndw,0,SETVAL,WSIZE), "MAIN: semctl global");
