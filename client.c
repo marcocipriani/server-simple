@@ -219,35 +219,6 @@ receive:
     goto receive; // TODO goto->while
 }
 
-/*
- *  function: sendack2
- *  ----------------------------
- *  Send a ack packet
- *
- *  sockd: socket descriptor used for sending
- *  op: flag for postive or negative status ack
- *  serseq: sequence number of the packet to acknowledge
- *  pktleft: // TODO ?
- *  status: verbose description of the ack
- *
- *  return: -
- *  error: -
- */
-void sendack2(int sockd, int op, int serseq, int pktleft, char *status){
-    pid_t me = getpid();
-    //int sockd; // TODEL
-    struct pkt ack;
-
-    struct sockaddr servaddr;
-    getpeername(sockd, &servaddr, &len);
-
-    nextseqnum++;
-    ack = makepkt(op, nextseqnum, serseq, pktleft, strlen(status), status);
-
-    check(sendto(sockd, &ack, HEADERSIZE+ack.size, 0, (struct sockaddr *)&servaddr, sizeof(struct sockaddr_in)), ":sendto");
-printf("[Client pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-}
-
 void *thread_sendpkt(int sockd, void *arg){
     struct elab2 *cargo; // = sender_info t_info;
     // then update common

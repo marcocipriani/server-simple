@@ -12,44 +12,6 @@ char rcvbuf[45000]; // buffer per la put
 void **tstatus;
 char *spath = SERVER_FOLDER; // root folder for server
 
-/*
-LEGACY
- *  function: waitforack
- *  ----------------------------
- *  Wait for a positive ack
- *
- *  return: 1 on successfully received ack
- *  error: 0
-
-int waitforack() {
-    struct pkt ack;
-
-printf("[Server] Waiting for ack...\n");
-    check(recvfrom(sockd, &ack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "waitforack:recvfrom");
-printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, ack.data);
-
-    if (ack.op == ACK_POS) {
-        return 1;
-    }
-    return 0;
-}
- */
-int setsock(struct sockaddr_in addr, int seconds){
-    int sockd = -1;
-    struct timeval tout;
-
-    sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
-
-    check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
-
-    tout.tv_sec = seconds;
-    tout.tv_usec = 0;
-    check(setsockopt(sockd, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout)), "setsock:setsockopt");
-
-printf("Created new socket id:%d family:%d port:%d addr:%d\n", sockd, addr.sin_family, addr.sin_port, addr.sin_addr.s_addr);
-    return sockd;
-}
-
 int freespacebuf2(int totpkt){
     size_t totpktsize;
     int res;
@@ -591,7 +553,7 @@ printf("Root folder: %s\n", spath);
     listen_addr.sin_family = AF_INET;
     listen_addr.sin_port = htons(SERVER_PORT);
     listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    connsd = setsock(listen_addr, 0/*, 1*/);
+    connsd = setsock(listen_addr, 0);
     check(bind(connsd, (struct sockaddr *)&listen_addr, sizeof(struct sockaddr)), "main:bind:connsd");
     len = sizeof(struct sockaddr_in);
     ongoing_operations = 0;
@@ -627,66 +589,15 @@ printf("Passed elab to child %d\n\n", tid);
                 break;
 
             case SYNOP_GET:
-                /*if (!(chec_validate(SYNOP_GET))){
-                check_mem(memset(&ack, 0, sizeof(struct pkt)), "main:get:ack");
-                ack = makepkt(ACK_NEG, nextseqnum, opdata.clipacket.seq, opdata.clipacket.pktleft, strlen("malformed packet"), "malformed packet");
-                check(sendto(connsd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "main:sendto:ack:malformed_packet");
-printf("server: Operation denied \n")
-                }*/
                 pthread_create(&tid, NULL, get, (void *)&opdata);
                 ++ongoing_operations;
 printf("Passed elab to child %d\n\n", tid);
-                /* LEGACY
-                // calculate the size of the arg file
-                filename=malloc(cpacket.size*(sizeof(char)));
-                printf("filename: %s \n", filename);
-                printf("filename: %s \n", cpacket.data);
-                printf("lunghezza filename: %d \n", cpacket.size);
-                strncpy(filename, cpacket.data, cpacket.size); // salvo il filename del file richiesto
-                printf("filename copiato: %s \n", filename);
-                localpathname = malloc(DATASIZE * sizeof(char));
-        	    sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
-                filesize = calculate_numpkts(localpathname);
-                if (filesize == -1) {
-                    //sack = makepkt(4, nextseqnum, cpacket.seq, 0, 22, "GET: File non presente");
-                    sendack(sockd, ACK_NEG, cpacket.seq, 0, "GET: File non presente");
-                }else{
-                printf("[SERVER] File selected is %s and it has generate %d pkt to transfer \n", filename, filesize);
-                //sack = makepkt(4, nextseqnum, cpacket.seq, filesize, 2, "ok");
-                sendack(sockd, ACK_POS, cpacket.seq, filesize, "ok");
-                if (get(nextseqnum, filesize, localpathname)) {
-                    printf("[SERVER] Sending file %s complete with success \n", filename);
-                  }else{
-                      printf("[SERVER]Problem with transfer file %s to client  \n", filename);
-                      exit(EXIT_FAILURE);
-                  }
-                }
-                printf("My job here is done\n\n");
-                free(filename);
-                free(localpathname);
-                check_mem(memset(&cpacket.data, 0, ((DATASIZE) * sizeof(char))), "main-GET:memset:cpacket");
-                */
                 break;
 
             case SYNOP_PUT:
                 //pthread_create(&tid, NULL, put, (void *)&opdata);
                 ++ongoing_operations;
 printf("Passed elab to child %d\n\n", tid);
-                /* LEGACY
-            	if (freespacebuf2(cpacket.pktleft)) {
-            		printf("IL SERVER PUÒ OSPITARE IL FILE %s \n",cpacket.data);
-            		sendack(sockd, ACK_POS, cpacket.seq, cpacket.pktleft, "ok");
-            		if (put(nextseqnum, cpacket.data, cpacket.pktleft)) {
-                    	printf("[SERVER] Receiving file %s complete with success \n", cpacket.data);
-                  	} else {
-                      printf("[SERVER] Problem in receiving file %s from client \n", cpacket.data);
-                      exit(EXIT_FAILURE);
-                  }
-            	} else {
-                	sendack(sockd, ACK_NEG, cpacket.seq, 0, "receive buffer cannot contain filesize");
-                	exit(EXIT_FAILURE);
-                }
-                */
                 break;
 
             default:

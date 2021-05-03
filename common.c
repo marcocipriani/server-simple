@@ -394,7 +394,7 @@ ssize_t writen(int fd, const void *vptr, size_t n){
 /*
  *  function: setsock
  *  ----------------------------
- *  Create a socket with defined address (even for server purpose) and timeout
+ *  Create a socket with defined address and timeout
  *
  *  addr: address of contacting end point
  *  seconds: time for timeout
@@ -402,13 +402,11 @@ ssize_t writen(int fd, const void *vptr, size_t n){
  *  return: descriptor of a new socket
  *  error: -1
  */
-int setsock2(struct sockaddr_in addr, int seconds){
+int setsock(struct sockaddr_in addr, int seconds){
     int sockd = -1;
     struct timeval tout;
 
     sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
-
-    //check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
 
     tout.tv_sec = seconds;
     tout.tv_usec = 0;
