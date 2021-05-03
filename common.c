@@ -69,7 +69,6 @@ void push_pkt(pktstack *topPtr, struct pkt data){
 printf("pacchetto %d non inserito nella pila\n",data.seq);
     }
 }
-
 struct pkt pop_pkt(pktstack *topPtr){
     pktstack tempPtr; //puntatore temporaneo al nodo
     struct pkt popValue; //pacchetto rimosso
@@ -81,15 +80,6 @@ struct pkt pop_pkt(pktstack *topPtr){
 
     return popValue;
 }
-
-struct index{
-    int value;
-    struct index *next;
-};
-typedef struct index *index_stack;
-
-// TODO push_index
-// TODO pop_index
 
 struct sender_info{
     pktstack stack; //puntatore a struct stack_elem
@@ -112,8 +102,89 @@ struct sender_info{
     pid_t father_pid;       //pid del padre
 };
 
+struct index{
+    int value;
+    struct index *next;
+};
+typedef struct index *index_stack;
+
+void init_index_stack(index_stack *stack)
+int push_index(index_stack *stack, int new_index){
+    index_stack new = malloc(sizeof(struct index));
+    if(new == NULL) return -1; // no fatal exit
+    new->value = new_index;
+    new->next = *stack;
+    *stack = new;
+
+    return 0;
+}
+int pop_index(index_stack *stack){
+    if(*stack == NULL) return -1;
+
+    int res = (*stack)->value;
+    index *tmp = *stack;
+    *stack = (*stack)->next;
+
+    free(tmp);
+    return res;
+}
+
+struct queue_elem{
+    struct pkt packet;
+    struct queue_elem *next;
+};
+typedef struct{
+    struct queue_elem *head;
+    struct queue_elem *tail;
+} pktqueue;
+
+void init_queue(pktqueue *queue){
+    queue->head = NULL;
+    queue->tail = NULL;
+}
+int enqueue(pktqueue *queue, struct pkt packet){
+    struct queue_elem new_packet = malloc(sizeof(struct queue_elem));
+    if(new_packet == NULL) return -1; // no fatal exit
+    new_packet.packet = packet;
+    new_packet.next = NULL;
+
+    if(queue->tail != NULL){
+        queue->tail->next = new_packet;
+    }
+    queue->tail = new_packet;
+
+    if(queue->head == NULL){
+        queue->head = new_packet;
+    }
+
+    return 0;
+}
+int dequeue(pktqueue *queue, struct pkt *packet){
+    if(queue->head == NULL) return -1;
+
+    struct queue_elem *tmp = queue->head;
+
+    *packet = tmp->packet;
+
+    queue->head = queue->head->next;
+    if(queue->head == NULL){
+        queue->tail = NULL;
+    }
+
+    //free(tmp);
+    return 0;
+}
+
 struct receiver_info{
+    int sockd; // socket where to perform the operation
     int numpkts; // total packets of the file to be received
+    // int nextseqnum;
+    int sem_readypkts; // semaphore to see if there are some packets ready to be read
+    pthread_mutex_t mutex_rcvqueue; // mutex for access to received packets queue
+    pktqueue received_pkts; // queue where are stored received packets
+    int *file_cells; // list of cells from receive buffer where the file is stored in
+    int init_transfer_seq; // sequence number of the first cargo packet
+    int rcvbase; // base number of the receive window (less recent packet to ack)
 };
 
 /*
@@ -324,25 +395,17 @@ ssize_t writen(int fd, const void *vptr, size_t n){
  *
  *  addr: address of contacting end point
  *  seconds: time for timeout
- *  is_server: flag for bind()
  *
  *  return: descriptor of a new socket
  *  error: -1
  */
-int setsock(struct sockaddr_in addr, int seconds, int is_server){
+int setsock(struct sockaddr_in addr, int seconds){
     int sockd = -1;
     struct timeval tout;
 
     sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
 
-    // check_mem(memset((void *)&addr, 0, sizeof(addr)), "setsock:memset");
-    // addr->sin_family = AF_INET;
-    // addr->sin_port = htons(port);
-    // addr->sin_addr.s_addr = htonl(INADDR_ANY);
-    // check(inet_pton(AF_INET, address, &addr->sin_addr), "setsock:inet_pton");
-    if(!is_server){
-        check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
-    }
+    check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
 
     tout.tv_sec = seconds;
     tout.tv_usec = 0;
