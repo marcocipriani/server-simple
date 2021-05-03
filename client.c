@@ -86,6 +86,8 @@ printf("[Client pid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:
     return sockd;
 }
 
+void lastwrite_handler()
+
 // input: filename, numpkts, writebase_sem,
 void write_onfile(){
     int last_write_made = -1; // from 0 to numpkts
@@ -111,7 +113,7 @@ void write_onfile(){
 
 void receiver(struct receiver_info info){
     pid_t me = getpid(); // TODO pthread_self()
-    struct sembuf wait;
+    struct sembuf wait_readypkts;
     struct pkt cargo, ack;
     int i;
 
@@ -119,10 +121,10 @@ void receiver(struct receiver_info info){
 
 waitforpkt:
     // wait if there are packets to be read
-    wait.sem_num = 0;
-    wait.sem_op = -1;
-    wait.sem_flg = SEM_UNDO;
-    check(semop(info.sem_readypkts, &wait, 1), "receiver:semop:sem_readypkts");
+    wait_readypkts.sem_num = 0;
+    wait_readypkts.sem_op = -1;
+    wait_readypkts.sem_flg = SEM_UNDO;
+    check(semop(info.sem_readypkts, &wait_readypkts, 1), "receiver:semop:sem_readypkts");
 
     pthread_mutex_lock(&info.mutex_rcvqueue);
     if(dequeue(&info.received_pkts, &cargo) == -1){
@@ -155,20 +157,23 @@ printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d
 
     pthread_mutex_unlock(&info.mutex_rcvbuf);
 
-    memset((void *)&cargo, 0, HEADERSIZE + cargo.size);
-    memset((void *)&ack, 0, HEADERSIZE + ack.size);
+    check_mem(memset((void *)&cargo, 0, HEADERSIZE + cargo.size), "receiver:memset:cargo");
+    check_mem(memset((void *)&ack, 0, HEADERSIZE + ack.size), "receiver:memset:ack");
     goto waitforpkt;
 
 }
 
 // TODO move into get
-void father(){
+void father(void *arg){
     int sockd;
-    struct pkt synack;
+    struct pkt synack, cargo;
     char *filename = (char *)arg;
     struct receiver_info t_info;
     pthread_mutex_t mutex_rcvqueue;
-    //struct sigaction lastwrite_act;
+    struct sigaction act_lastwrite;
+    pthread_t tid; // unused
+    int n;
+    struct sembuf signal_readypkts;
 
     sockd = request_op(&synack, SYNOP_GET, 0, filename);
 
@@ -184,24 +189,31 @@ void father(){
     t_info.init_transfer_seq = synack.ack + 1;
     t_info.rcvbase = 1;
 
-    // signal(LASTWRITE,handler)
-    // lastwrite_act.sa_handler
-    //                void     (*sa_sigaction)(int, siginfo_t *, void *);
-    //                sigset_t   sa_mask;
-    //                int        sa_flags;
-    //                void     (*sa_restorer)(void);
-    // sigaction(int signum, &lastwrite_act, struct sigaction *restrict oldact);
+    memset (&act_lastwrite, 0, sizeof(struct sigaction));
+    act_lastwrite.sa_handler = &lastwrite_handler;
+    sigemptyset(&act_lastwrite.sa_mask);
+    act.sa_flags = 0;
+    check(sigaction(SIGLASTACK, &act_lastwrite, NULL), "get:sigaction:siglastack");
 
-    // create child 1 doing receiver passing mega-struct
-    // crete child 2 doing write_onfile passing synack.data
+    for(int i=0; i<CLIENT_NUMTHREADS; i++){
+        pthread_create(&tid, NULL, receiver, (void *)&t_info);
+    }
+    pthread_create(&tid, NULL, write_onfile, (void *)&t_info); // what to pass? synack and more
 
-    //   receive:
-    // n=rcvfrom(cargo)
-    //   if(n==0)
-    //     goto receive:
-    //   push_pkt on fifo pkt al CHILD 1
-    //   signal(semFifo)
+receive:
+    check_mem(memset((void *)&cargo, 0, HEADERSIZE + ack.size), "get:memset:ack");
+    n = recv(sockd, &cargo, MAXTRANSUNIT, 0);
 
+    if(n==0){ goto receive; }
+
+    check(enqueue(&received_pkts, cargo), "get:enqueue:cargo");
+
+    signal_readypkts.sem_num = 0;
+    signal_readypkts.sem_op = 1;
+    signal_readypkts.sem_flg = SEM_UNDO;
+    check(semop(info.sem_readypkts, &signal_readypkts, 1), "get:semop:sem_readypkts");
+
+    goto receive; // TODO goto->while
 }
 
 /*
