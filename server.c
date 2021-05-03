@@ -68,7 +68,12 @@ int freespacebuf2(int totpkt){
  *  ----------------------------
  *  Check if an operation requested by the client is valid
  *
- *  return: ACK_POS on success
+ *  status: string which denotes the validity of the operation
+ *  pktleft: quantity of packets the arg file is made of
+ *  op: operation macro
+ *  arg: filename
+ *
+ *  return: ACK_POS on success, status string on status param, size of file in packets on pktleft param
  *  error: ACK_NEG
  */
 int check_validity(char **status, int *pktleft, int op, char *arg){
@@ -80,8 +85,9 @@ int check_validity(char **status, int *pktleft, int op, char *arg){
             break;
 
         case SYNOP_GET:
-            filename = check_mem(malloc(strlen(arg) * (sizeof(char))), "check_validity:malloc:filename");
-            sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
+            //filename = check_mem(malloc(strlen(arg) * (sizeof(char))), "check_validity:malloc:filename");
+            sprintf(localpathname, "%s%s", SERVER_FOLDER, arg);
+printf("\tcheck_validity op:%d arg:%s filename:%s\n", op, arg, localpathname);
             if ((*pktleft = calculate_numpkts(localpathname)) == -1){
                 *status = "File not available";
 printf("Invalid operation on this server\n");
@@ -119,8 +125,10 @@ int serve_op(struct pkt *synack, struct elab opdata){
     char *status; // [DATASIZE]?
     int n;
 
+    //synack = check_mem(malloc(sizeof(struct pkt)), "serve_op:malloc:synack");
+
     /*** Create socket to perform the operation ***/
-    opersd = check(setsock2(opdata.cliaddr, SERVER_TIMEOUT/*, 1*/), "serve_op:setsock:opersd");
+    opersd = check(setsock(opdata.cliaddr, SERVER_TIMEOUT), "serve_op:setsock:opersd");
     check(connect(opersd, (struct sockaddr *)&opdata.cliaddr, len), "serve_op:connect:cliaddr");
 
     /*** Create ack ***/
@@ -131,11 +139,13 @@ int serve_op(struct pkt *synack, struct elab opdata){
 
     ack = makepkt(status_code, initseq, opdata.clipacket.seq, pktleft, strlen(status), status);
 
-    check(send(opersd, &ack, HEADERSIZE + ack.size, 0), "setop:sendto:ack");
+    //check(sendto(opersd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, len), "setop:sendto:ack");
+    check(send(opersd, &ack, HEADERSIZE + ack.size, 0), "setop:send:ack");
 printf("[Server tid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
     /*** Receive synack (response to ack) from client ***/
-printf("[Server tid:%d sockd:%d] Waiting for synack in %d seconds...\n", SERVER_TIMEOUT, me, opersd);
+printf("[Server tid:%d sockd:%d] Waiting for synack in %d seconds...\n", me, opersd, SERVER_TIMEOUT);
+    memset(synack, 0, sizeof(struct pkt));
     n = recv(opersd, synack, MAXTRANSUNIT, 0);
 
     if(n<1){
@@ -144,7 +154,7 @@ printf("No synack response from client\n");
         return -1;
     }
 
-printf("[Server tid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, synack->data);
+printf("[Server tid:%d sockd:%d] Received synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char*)synack->data);
 
     if(synack->op == ACK_NEG){
 printf("Client operation aborted\n");
@@ -171,10 +181,7 @@ void *thread_sendpkt(void *arg){
     // TODO change ptr->aritmetic
 
     int opersd=cargo.sockid;
-    struct sockaddr cliaddr;
     socklen_t len;
-
-    //getpeername(opersd, &servaddr, &len);
 
 transmit:
     oper.sem_num = 0;
@@ -183,11 +190,12 @@ transmit:
 
     check(semop(cargo.semLoc,&oper,1),"THREAD: error wait semLoc");    //wait su semLocale=pkts_to_send
                                                                       //controllo che ci siano pkt da inviare
+
     oper.sem_num = 0;
     oper.sem_op = -1;
     oper.sem_flg = SEM_UNDO;
 
-    check(semop(cargo.semLoc,&oper,1),"THREAD: error wait global");    //wait su semGlob
+    check(semop(SemSnd_Wndw,&oper,1),"THREAD: error wait global");    //wait su semGlob
 
     check(pthread_mutex_lock(&cargo.mutex_stack),"THREAD: error lock Stack");      //lock sulla struct stack_elem
     sndpkt = pop_pkt(&cargo.stack);
@@ -198,11 +206,12 @@ transmit:
 
     check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global");
 */
-    check(pthread_mutex_unlock(&cargo.mutex_stack),"THREAD: error unlock Stack");   //unlock struct stack_elem
+    pthread_mutex_unlock(&cargo.mutex_stack);   //unlock struct stack_elem
 
-    sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in));
+    //sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in));
+    check(send(cargo.sockid, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
 
-    check(pthread_mutex_trylock(&cargo.mutex_time),"THREAD: error trylock time");
+    pthread_mutex_trylock(&cargo.mutex_time);
     if (*(cargo.timer) == 0){       //avviso il padre di dormire per timeout_Interval
       //----->lock timer
       *(cargo.timer)=1;  //corretto scritto cosi?
@@ -353,6 +362,8 @@ printf("server: errore malloc contatore ack \n");
             exit(EXIT_FAILURE);
         }
 
+        // TODO if numpkt < WSIZE
+
         ttid = malloc((WSIZE) * sizeof(pthread_t));
         if (ttid == NULL) {
 printf("server: errore malloc contatore ack \n");
@@ -371,11 +382,7 @@ printf("lunghezza dati: %lu\n", strlen((char *)dati));
 
             sendpkt[j] = makepkt(5, iseq, 0, numpkt - j, aux, dati);
 printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendpkt[j].pktleft, sendpkt[j].data);
-            /*sendpkt[j].p = counter;
-            sendpkt[j].initialseq = init;*/
-          /*  for (z = 0; z < 120; z++) {
-printf("%c", sendpkt[j].thpkt.data[z]);
-}*/         memset(dati, 0, DATASIZE);
+            memset(dati, 0, DATASIZE);
             iseq++;
         }
 
@@ -585,6 +592,7 @@ printf("Root folder: %s\n", spath);
     listen_addr.sin_port = htons(SERVER_PORT);
     listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     connsd = setsock(listen_addr, 0/*, 1*/);
+    check(bind(connsd, (struct sockaddr *)&listen_addr, sizeof(struct sockaddr)), "main:bind:connsd");
     len = sizeof(struct sockaddr_in);
     ongoing_operations = 0;
 
@@ -597,9 +605,9 @@ printf("Root folder: %s\n", spath);
         check_mem(memset(&cliaddr, 0, sizeof(struct sockaddr_in)), "main:memset:cliaddr");
         check_mem(memset(&synop, 0, sizeof(struct pkt)), "main:memset:synop");
 
-printf("[Server pid:%d sockd:%d] Waiting for synop...\n\n", me, connsd);
+printf("\n[Server pid:%d sockd:%d] Waiting for synop...\n", me, connsd);
         check(recvfrom(connsd, &synop, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "main:rcvfrom:synop");
-printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, connsd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, synop.data);
+printf("[Server pid:%d sockd:%d] Received synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, connsd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, synop.data);
 
         // TODO if ongoing_operations >= BACKLOG send negative ack and goto recvfrom synop
 

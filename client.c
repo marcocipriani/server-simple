@@ -28,12 +28,12 @@ pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
 int request_op(struct pkt *synack, int cmd, int pktleft, char *arg){
     int me = (int)pthread_self();
     int sockd;
-    struct pkt synop, ack;//TODEL, synack;
+    struct pkt synop, ack;
     struct sockaddr_in child_servaddr;
     int initseq;
     int n;
 
-    sockd = setsock2(main_servaddr, CLIENT_TIMEOUT);
+    sockd = setsock(main_servaddr, CLIENT_TIMEOUT);
 
     //initseq = arc4random_uniform(MAXSEQNUM);
     srand((unsigned int)time(0));
@@ -48,21 +48,13 @@ printf("[Client pid:%d sockd:%d] Waiting for ack in max %d seconds...\n", me, so
 
     if(n==0){
         // TODO retry op
-        // printf("%d seconds timeout for ack expired\nRetry operation op:%d seq:%d? [Y/n] ", CLIENT_TIMEOUT, synop.op, synop.seq);
-        // fflush_stdin();
-        // if(getchar()=='n'){
-        //     close(sockd); // sockd = 0
-        //     return sockd;
-        // }else{
-        //     goto sendsynop;
-        // }
 printf("No ack response from server\n");
         close(sockd);
         return -1;
     }
 printf("[Client pid:%d sockd:%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
-    if(ack.op == ACK_NEG){ // TODO  && ack.ack == synop.seq
+    if(ack.op == ACK_NEG && ack.ack == synop.seq){
 printf("Operation on server denied\n");
         close(sockd);
         return -1;
@@ -82,7 +74,7 @@ printf("Operation on server denied\n");
         *synack = makepkt(cmd, nextseqnum, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
 
 printf("[Client pid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
-        check(send(sockd, &synack, HEADERSIZE + synack->size, 0) , "request_op:sendto");
+        check(send(sockd, synack, HEADERSIZE + synack->size, 0) , "request_op:send");
     }
 
     return sockd;
@@ -182,6 +174,10 @@ void *father(void *arg){
     struct sembuf signal_readypkts;
 
     sockd = request_op(&synack, SYNOP_GET, 0, filename);
+    if(sockd < 1){
+printf("request_op:operation unsuccessful\n");
+        pthread_exit(NULL);
+    }
 
     t_info.sem_readypkts = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666), "get:semget:sem_rcvqueue");
     check(pthread_mutex_init(&mutex_rcvqueue, NULL), "get:pthread_mutex_init:mutex_rcvqueue");
@@ -355,7 +351,7 @@ void *get(void *arg){
     int numpkts,edgepkt;
     int pos,lastpktsize,rcv_base,rltv_base;
     char *localpathname;
-    struct pkt cargo;
+    struct pkt cargo, ack;
 
     int me = (int)pthread_self();
     char *filename = (char *)arg;
@@ -365,25 +361,23 @@ void *get(void *arg){
     struct sockaddr_in child_servaddr;
 
     sockd = request_op(&synack, SYNOP_GET, 0, filename);
+    if(sockd < 1){
+printf("request_op:operation unsuccessful\n");
+        pthread_exit(NULL);
+    }
 
     // parse variables to set receiver_info
     //check(getpeername(sockd, (struct sockaddr *)&child_servaddr, &len), "get:getpeername:child_servaddr");
 
     localpathname = malloc(DATASIZE * sizeof(char));
     sprintf(localpathname, "%s%s", CLIENT_FOLDER, filename);
-    printf("local %s\n",localpathname);
+printf("local %s\n",localpathname);
 
     numpkts = synack.pktleft;
     edgepkt=numpkts; /*#pkt totali del file da ricevere SOLUZIONE: do + while!!!*/
+    initseqserver = synack.seq + 1;
     rcv_base=initseqserver; //per ora initseqserver è globale
     rltv_base=1;
-
-    //if(freespacebuf(numpkts)){
-    if(0){
-        printf("non ho trovato spazio libero nel buff \n");
-        sendack2(sockd, ACK_NEG, initseqserver, numpkts, "Full_Client_Buff"); //ack negativo
-        pthread_exit(NULL);
-    }
 
 receiver:
         while(numpkts>0){
@@ -406,17 +400,20 @@ printf("numero sequenza pacchetto ricevuto fuori range \n");
                 memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
 
                 if(cargo.seq == rcv_base){
-                    sendack2(sockd, ACK_POS, cargo.seq, cargo.pktleft/*numpkts-(cargo.seq-initseqserver)*/, "ok");
+                    ack = makepkt(ACK_POS, 0, cargo.seq, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
                     rcv_base++;
                 }
                 else{   //teoricamente se cargo.seq>rcv_base
-                    sendack2(sockd, ACK_POS, rcv_base - 1,  numpkts - (rcv_base - initseqserver), "ok");
+                    ack = makepkt(ACK_POS, 0, rcv_base - 1, numpkts - (rcv_base - initseqserver), strlen(CARGO_OK), CARGO_OK);
                 }
+
+                check(send(sockd, &ack, ack.size, 0), "get:send:new-cargo-ack");
 printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
             }
             else{           //PKT NELL'INTERVALLO CORRETTO MA GIA' RICEVUTO
 printf("pacchetto già ricevuto, posso scartarlo \n");
-                sendack2(sockd, ACK_POS, rcv_base - 1, numpkts - (rcv_base - initseqserver), "ok");
+                ack = makepkt(ACK_POS, 0, rcv_base - 1, numpkts - (rcv_base - initseqserver), strlen(CARGO_OK), CARGO_OK);
+                check(send(sockd, &ack, ack.size, 0), "get:send:duplicated-cargo-ack");
                 goto receiver; // il pacchetto viene scartato
             }
             numpkts--;
