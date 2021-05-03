@@ -107,6 +107,7 @@ int serve_op(struct pkt *synack, struct elab opdata) {
 
     /*** Create socket to perform the operation ***/
     opersd = check(setsock(opdata.cliaddr, CLIENT_TIMEOUT, 1), "serve_op:setsock:opersd");
+    check(connect(sockd, (struct sockaddr *)&opdata.cliaddr, len), "serve_op:connect:cliaddr");
 
     /*** Create ack ***/
     status_code = check_validity(&status, &pktleft, opdata.clipacket.op, opdata.clipacket.data);
