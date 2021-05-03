@@ -6,12 +6,18 @@
 #define SERVER_TIMEOUT 60
 #define DEFAULT_PATH "~"
 #define SERVER_FOLDER "./server-files/"
+#define SERVER_NUMTHREADS 5
 
 // Client settings
 #define CLIENT_PORT 4193
 #define CLIENT_RCVBUFSIZE 30
 #define CLIENT_TIMEOUT 30
 #define CLIENT_FOLDER "./client-files/"
+#define CLIENT_NUMTHREADS 5
+
+// Sender signals
+#define SIGRETRANSMIT SIGUSR1
+#define SIGLASTACK SIGUSR2
 
 // Packet settings
 #define MAXTRANSUNIT 1500
@@ -28,6 +34,6 @@
 #define ACK_POS 4
 #define ACK_NEG 5
 #define CARGO 6
-
-#define SIGRETRANSMIT SIGUSR1
-#define SIGLASTACK SIGUSR2
+// ACK status
+#define CARGO_OK "received correctly"
+#define CARGO_MISSING "missing base packet"
