@@ -34,7 +34,6 @@ printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
     return 0;
 }
  */
-
 int setsock(struct sockaddr_in addr, int seconds){
     int sockd = -1;
     struct timeval tout;
@@ -51,8 +50,7 @@ printf("Created new socket id:%d family:%d port:%d addr:%d\n", sockd, addr.sin_f
     return sockd;
 }
 
-
-int freespacebuf2(int totpkt) {
+int freespacebuf2(int totpkt){
     size_t totpktsize;
     int res;
 
@@ -111,8 +109,8 @@ printf("Valid operation on this server\n");
  *  return: socket id, synack packet
  *  error: -1
  */
-int serve_op(struct pkt *synack, struct elab opdata) {
-    pthread_t me = pthread_self();
+int serve_op(struct pkt *synack, struct elab opdata){
+    int me = (int)pthread_self();
     struct pkt ack;
     int opersd;
     int pktleft = 0;
@@ -160,7 +158,7 @@ printf("Client operation continued\n");
 
 //input:puntatore a pila,sem(pkts_to_send),ack_counters,base,nextseqnum,initialseq(not required if pktlft->seq relative),sockd
 //timer, estimatedRTT..pid padre
-void *thread_sendpkt(void *arg) {
+void *thread_sendpkt(void *arg){
     struct sender_info cargo;//t_info
     struct pkt sndpkt, rcvack;
 
@@ -290,8 +288,8 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initia
  *  error: -
  */
 // OLD: int iseq, int numpkt, char *filename
-void *get(void *arg) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
-    pthread_t me = pthread_self();
+void *get(void *arg){ // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
+    int me = (int)pthread_self();
     struct pkt *sendpkt;
     int fd;
     int i, j, k, z;
@@ -469,6 +467,8 @@ printf("server:ERRORE pthread_create GET in main");
 
     int opersd; // TMP returned from setop
 
+    pthread_t me = pthread_self();
+
     npkt = pktleft;
     edgepkt = npkt;
     check(recvfrom(opersd, &rack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "PUT-server:recvfrom ack-client");
@@ -526,7 +526,7 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
  *  return: -
  *  error: -
  */
-void makelist(char **res, const char *path) {
+void makelist(char **res, const char *path){
     char command[DATASIZE];
     FILE *file;
 
@@ -545,7 +545,8 @@ void makelist(char **res, const char *path) {
  *  return: -
  *  error: -
  */
-void *list() {
+void *list(){
+    int me = (int)pthread_self();
     char *res = malloc(((DATASIZE)-1)*sizeof(char)); // client has to put \0 at the end
     char **resptr = &res;
     struct pkt listpkt;
@@ -558,7 +559,7 @@ printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
     check(sendto(opersd, &listpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)), "main:sendto");
 }
 
-int main(int argc, char const *argv[]) {
+int main(int argc, char const *argv[]){
     struct pkt synop, ack; // ack only when rejecting packets with bad op code
     struct sockaddr_in cliaddr;
     struct elab opdata;

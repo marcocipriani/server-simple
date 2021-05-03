@@ -143,8 +143,8 @@ void init_queue(pktqueue *queue){
     queue->tail = NULL;
 }
 int enqueue(pktqueue *queue, struct pkt packet){
-    struct queue_elem *new_packet; 
-    
+    struct queue_elem *new_packet;
+
     new_packet = (struct queue_elem *)malloc(sizeof(struct queue_elem));//????
     if(new_packet == NULL) return -1; // no fatal exit
     new_packet->packet = packet;
@@ -335,7 +335,7 @@ void *check_mem(void *mem, const char *msg){
  *  return: number of bytes actually read
  *  error: -1
  */
-ssize_t readn(int fd, void *buf, size_t n) {
+ssize_t readn(int fd, void *buf, size_t n){
     size_t nleft;
     ssize_t nread;
     char *ptr;
@@ -426,7 +426,7 @@ printf("Created new socket id:%d family:%d port:%d addr:%d\n", sockd, addr.sin_f
  *  return: -
  *  error: -
  */
-void fflush_stdin() {
+void fflush_stdin(){
 	char c;
 	while( (c=getchar())!=EOF && c!='\n');
 }

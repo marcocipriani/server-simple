@@ -26,7 +26,7 @@ pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
  *  error: 0
  */
 int request_op(struct pkt *synack, int cmd, int pktleft, char *arg){
-    pid_t me = getpid(); // TODO pthread_self()
+    int me = (int)pthread_self();
     int sockd;
     struct pkt synop, ack;//TODEL, synack;
     struct sockaddr_in child_servaddr;
@@ -88,10 +88,13 @@ printf("[Client pid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:
     return sockd;
 }
 
-void *lastwrite_handler();
+void *lastwrite_handler(){
+    int me = (int)pthread_self();
+};
 
 // input: filename, numpkts, writebase_sem,
 void *write_onfile(){
+    int me = (int)pthread_self();
     int last_write_made = -1; // from 0 to numpkts
     int n_bytes_to_write = DATASIZE;
     int fd;
@@ -114,7 +117,7 @@ void *write_onfile(){
 }
 
 void *receiver(void *arg){
-    pid_t me = getpid(); // TODO pthread_self()
+    int me = (int)pthread_self();
     struct sembuf wait_readypkts;
     struct pkt cargo, ack;
     int i;
@@ -167,6 +170,7 @@ printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d
 
 // TODO move into get
 void *father(void *arg){
+    int me = (int)pthread_self();
     int sockd;
     struct pkt synack, cargo;
     char *filename = (char *)arg;
@@ -252,16 +256,14 @@ void *thread_sendpkt(int sockd, void *arg){
     struct elab2 *cargo; // = sender_info t_info;
     // then update common
     struct pkt sndpkt, rcvack;
-    int me;
 
+    int me = (int)pthread_self();
     struct sockaddr servaddr;
-    getpeername(sockd, &servaddr, &len);
 
     cargo = (struct elab2 *)arg;
     me = (cargo->thpkt.seq) - (cargo->initialseq); // numero thread
     sndpkt = makepkt(5, cargo->thpkt.seq, 0, cargo->thpkt.pktleft, cargo->thpkt.size, cargo->thpkt.data);
 printf("sono il thread # %d \n", me);
-printf("valore del counter[%d] : %d \n", me, cargo->p[me]);
 
     sendto(sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
 check_ack:
@@ -301,11 +303,11 @@ printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initia
  *  error: -
  */
 void *list(void *arg){
-    pid_t me = getpid();
     int n;
     struct pkt listpkt;
     int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
 
+    int me = (int)pthread_self();
     int sockd;
     struct pkt synack;
     char *folder = (char *)arg;
@@ -355,6 +357,7 @@ void *get(void *arg){
     char *localpathname;
     struct pkt cargo;
 
+    int me = (int)pthread_self();
     char *filename = (char *)arg;
     int sockd;
     struct pkt synack;
