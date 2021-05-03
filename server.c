@@ -35,6 +35,23 @@ printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
     return 0;
 }
  */
+ 
+int setsock(struct sockaddr_in addr, int seconds){
+    int sockd = -1;
+    struct timeval tout;
+
+    sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
+
+    check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
+
+    tout.tv_sec = seconds;
+    tout.tv_usec = 0;
+    check(setsockopt(sockd, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout)), "setsock:setsockopt");
+
+printf("Created new socket id:%d family:%d port:%d addr:%d\n", sockd, addr.sin_family, addr.sin_port, addr.sin_addr.s_addr);
+    return sockd;
+}
+
 
 int freespacebuf2(int totpkt) {
     size_t totpktsize;
@@ -106,12 +123,15 @@ int serve_op(struct pkt *synack, struct elab opdata) {
     int n;
 
     /*** Create socket to perform the operation ***/
-    opersd = check(setsock(opdata.cliaddr, CLIENT_TIMEOUT, 1), "serve_op:setsock:opersd");
+    opersd = check(setsock(opdata.cliaddr, CLIENT_TIMEOUT/*, 1*/), "serve_op:setsock:opersd");
     check(connect(sockd, (struct sockaddr *)&opdata.cliaddr, len), "serve_op:connect:cliaddr");
 
     /*** Create ack ***/
     status_code = check_validity(&status, &pktleft, opdata.clipacket.op, opdata.clipacket.data);
-    initseq = arc4random();
+    //initseq = arc4random();
+    srand((unsigned int)time(0));
+    initseq=rand()%100;
+    
     ack = makepkt(status_code, initseq, opdata.clipacket.seq, pktleft, strlen(status), status);
 
     check(sendto(opersd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "setop:sendto:ack");
@@ -149,7 +169,7 @@ void *thread_sendpkt(void *arg) {
     int base;
     union sigval retransmit_info;
     struct sembuf oper;
-    cargo = (struct sender_info)*arg;
+    cargo = *((struct sender_info*)arg);
     // TODO change ptr->aritmetic
 
     int opersd=cargo.sockid;
@@ -172,7 +192,7 @@ transmit:
     check(semop(cargo.semLoc,&oper,1),"THREAD: error wait global");    //wait su semGlob
 
     check(pthread_mutex_lock(&cargo.mutex_stack),"THREAD: error lock Stack");      //lock sulla struct stack_elem
-    sndpkt = pop_pkt(cargo.stack);
+    sndpkt = pop_pkt(&cargo.stack);
 /*
     oper.sem_num = 0;                                                 //se pop_pkt a buon fine
     oper.sem_op = 1;                                                  //signal a semGlobal
@@ -182,12 +202,12 @@ transmit:
 */
     check(pthread_mutex_unlock(&cargo.mutex_stack),"THREAD: error unlock Stack");   //unlock struct stack_elem
 
-    sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, &len);
+    sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in));
 
     check(pthread_mutex_trylock(&cargo.mutex_time),"THREAD: error trylock time");
-    if (cargo.timer == 0){       //avviso il padre di dormire per timeout_Interval
+    if (*(cargo.timer) == 0){       //avviso il padre di dormire per timeout_Interval
       //----->lock timer
-      (cargo.timer)=1;  //corretto scritto cosi?
+      *(cargo.timer)=1;  //corretto scritto cosi?
       //avvia sampleRTT
       oper.sem_num = 0;
       oper.sem_op = 1;                                                  //signal a semTimer
@@ -205,7 +225,7 @@ printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ac
 printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initialseq), cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]);
 
     if(n>0){
-      if(rcvack.ack-(cargo.base)>WSIZE || rcvack.ack<base-1){    //ack fuori finestra
+      if(rcvack.ack-(*(cargo.base))>WSIZE || rcvack.ack<base-1){    //ack fuori finestra
         check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
         goto check_ack;
       }
@@ -213,7 +233,7 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initia
           for (k=base;k<=rcvack.ack;k++){
             //se pktlft=seq relative..da fare
             cargo.ack_counters[k - (cargo.initialseq)] = (int)cargo.ack_counters[k - (cargo.initialseq)] + 1; //sottraggo il num.seq iniziale
-            cargo.base++; //da controllare
+            (*(cargo.base))++; //da controllare
 
             oper.sem_num = 0;                                                 //se ack in finestra
             oper.sem_op = 1;                                                  //signal a semGlobal
@@ -270,7 +290,7 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initia
  *  error: -
  */
 // OLD: int iseq, int numpkt, char *filename
-void get(void *arg) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
+void *get(void *arg) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     struct pkt *sendpkt;
     int fd;
     int i, j, k, z;
@@ -282,19 +302,18 @@ void get(void *arg) { // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     int semTimer,semPkt_to_send;
     struct sender_info t_info;
     int init = initseqserver;
-    int oldBase;
 
-    struct elab synop = (struct elab)&arg;
+    struct elab synop = *((struct elab*)arg);
     struct pkt synack;
     int opersd;
 
     opersd = serve_op(&synack, synop);
     if(opersd < 0){
-printf("Operation op:%d seq:%d unsuccessful\n", synop.op, synop.seq);
+printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipacket.seq);
         pthread_exit(NULL);
     }
 
-    char *filename;
+    char *filename,*localpathname;
     int numpkt=synack.pktleft;
     int iseq=synack.ack + 1;
     int base = init;
@@ -311,9 +330,9 @@ printf("[SERVER] Connection established \n");
         startRTT.start=&start;
         startRTT.seq=-1;
 
-        filename=malloc(opdata.clipacket.size*(sizeof(char)));
-        strncpy(filename,opdata.clipacket.data,opdata.clipacket.size);
-        localpathname = malloc(DATASIZE * sizeof(char));
+        filename=(char *)malloc(synop.clipacket.size*(sizeof(char)));
+        strncpy(filename,synop.clipacket.data,synop.clipacket.size);
+        localpathname = (char *)malloc((DATASIZE) * sizeof(char));
         sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
 
         tid = pthread_self();
@@ -398,31 +417,31 @@ printf("%c", sendpkt[j].thpkt.data[z]);
             t_info.estimatedRTT = &estimatedRTT;
             t_info.startRTT = &startRTT;
             t_info.timeout_Interval = &timeout_Interval;
-            t_info.father_pid = pid;
+            t_info.father_pid = tid;
 
 
             for(j=0;j<WSIZE;j++){
-              if(pthread_create(&ttid[j], NULL, thread_sendpkt, (void *)t_info) != 0){
+              if(pthread_create(&ttid[j], NULL, thread_sendpkt, (void *)&t_info) != 0){
 printf("server:ERRORE pthread_create GET in main");
                 exit(EXIT_FAILURE);
               }
             }
 
 
-          signal(SIGRETRANSMIT,push_base);//usa sigaction
-          signal(SIGLASTACK,handler);
+          //signal(SIGRETRANSMIT,push_base);//usa sigaction
+          //signal(SIGLASTACK,handler);
           //signal(/*stop timer-base aggiornata*/);
-          while((base-initialseq)<=numpkt){
+          while((base-init)<=numpkt){
             oper.sem_num = 0;
             oper.sem_op = -1;
             oper.sem_flg = SEM_UNDO;
 
             check(semop(semTimer,&oper,1),"GET: error wait semTimer");   //WAIT su semTimer
-            check(pthread_mutex_lock(&cargo.mutex_time),"GET: error lock time");
+            check(pthread_mutex_lock(&mtxTime),"GET: error lock time");
             oldBase=base;
             usleep(timeout_Interval);
-            if (counter[oldBase - initialseq]==0){ //if (oldBase==base)   //RITRASMISSIONE
-              push_pkt(&stackPtr,send[oldBase - initialseq])  //o handler()signal(sem_pkts_to_send)
+            if (counter[oldBase - init]==0){ //if (oldBase==base)   //RITRASMISSIONE
+              push_pkt(&stackPtr,sendpkt[oldBase - init]);  //o handler()signal(sem_pkts_to_send)
 
               oper.sem_num = 0;                                                 //se RITRASMISSIONE
               oper.sem_op = 1;                                                  //signal a semPkt_to_send
@@ -437,17 +456,17 @@ printf("server:ERRORE pthread_create GET in main");
               check(semop(SemSnd_Wndw,&oper,1),"GET: error signal semGlobal ");
             }
             timer=0;
-            check(pthread_mutex_unlock(&cargo.mutex_time),"GET: error unlock time");
+            check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");
           }
-          return 1;
+          //return 1;
     }
     else{
 printf("il client rifiuta il trasferimento del file\n");
-        return 0; /* ho ricevuto ack negativo dal client */
+        //return 0; /* ho ricevuto ack negativo dal client */
     }
 }
-
-int put(int iseq, void *pathname, int pktleft){
+//OLD int iseq, void *pathname, int pktleft
+/*void *put(void *arg){
     int fd;
     size_t filesize;
     int npkt,edgepkt;
@@ -465,7 +484,7 @@ printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
     // strcmp(rack.op, ACK_POS)
     if (strcmp(rack.data, "ok") == 0) {
     	initseqserver = rack.seq;
-    	localpathname = malloc(DATASIZE * sizeof(char));
+    	localpathname = malloc((DATASIZE) * sizeof(char));
     	sprintf(localpathname, "%s%s", SERVER_FOLDER, pathname);
 
 receiver:
@@ -501,7 +520,7 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
     printf("[Server] Client refuses to transfer the file \n");
     return 0;
     }
-}
+}*/
 
 /*
  *  function: makelist
@@ -533,7 +552,7 @@ void makelist(char **res, const char *path) {
  *  return: -
  *  error: -
  */
-void list() {
+void *list() {
     char *res = malloc(((DATASIZE)-1)*sizeof(char)); // client has to put \0 at the end
     char **resptr = &res;
     struct pkt listpkt;
@@ -570,7 +589,7 @@ printf("Root folder: %s\n", spath);
     listen_addr.sin_family = AF_INET;
     listen_addr.sin_port = htons(SERVER_PORT);
     listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    connsd = setsock(listen_addr, 0, 1);
+    connsd = setsock(listen_addr, 0/*, 1*/);
     len = sizeof(struct sockaddr_in);
     ongoing_operations = 0;
 
@@ -590,9 +609,13 @@ printf("[Server pid:%d sockd:%d] Received [op:%d][seq:%d][ack:%d][pktleft:%d][si
         // TODO if ongoing_operations >= BACKLOG send negative ack and goto recvfrom synop
 
         // Prepare op for child
+        char *dati;
+        dati= (char *)malloc(sizeof(char)*(synop.size));
         check_mem(memset(&opdata, 0, sizeof(struct elab)), "main:memset:opdata");
         memcpy(&opdata.cliaddr, &cliaddr, len);
-        opdata.clipacket = makepkt(synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, synop.data);
+        memcpy(dati,&synop.data,synop.size);
+        printf("dati:%s\n",dati);
+        opdata.clipacket = makepkt(synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, dati);
 printf("Creating elab [addr:%d][port:%d][op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", opdata.cliaddr.sin_addr.s_addr, opdata.cliaddr.sin_port, opdata.clipacket.op, opdata.clipacket.seq, opdata.clipacket.ack, opdata.clipacket.pktleft, opdata.clipacket.size, opdata.clipacket.data);
 
         /*** Operation selection ***/
@@ -647,7 +670,7 @@ printf("Passed elab to child %d\n\n", tid);
                 break;
 
             case SYNOP_PUT:
-                pthread_create(&tid, NULL, put, (void *)&opdata);
+                //pthread_create(&tid, NULL, put, (void *)&opdata);
                 ++ongoing_operations;
 printf("Passed elab to child %d\n\n", tid);
                 /* LEGACY

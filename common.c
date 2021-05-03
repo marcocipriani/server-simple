@@ -99,7 +99,7 @@ struct sender_info{
     struct sample *startRTT;
     //struct timespec *endRTT;
     double *timeout_Interval;
-    pid_t father_pid;       //pid del padre
+    pthread_t father_pid;       //pid del padre
 };
 
 struct index{
@@ -108,7 +108,7 @@ struct index{
 };
 typedef struct index *index_stack;
 
-void init_index_stack(index_stack *stack)
+void init_index_stack(index_stack *stack);
 int push_index(index_stack *stack, int new_index){
     index_stack new = malloc(sizeof(struct index));
     if(new == NULL) return -1; // no fatal exit
@@ -122,7 +122,7 @@ int pop_index(index_stack *stack){
     if(*stack == NULL) return -1;
 
     int res = (*stack)->value;
-    index *tmp = *stack;
+    struct index *tmp = *stack;
     *stack = (*stack)->next;
 
     free(tmp);
@@ -143,10 +143,12 @@ void init_queue(pktqueue *queue){
     queue->tail = NULL;
 }
 int enqueue(pktqueue *queue, struct pkt packet){
-    struct queue_elem new_packet = malloc(sizeof(struct queue_elem));
+    struct queue_elem *new_packet; 
+    
+    new_packet = (struct queue_elem *)malloc(sizeof(struct queue_elem));//????
     if(new_packet == NULL) return -1; // no fatal exit
-    new_packet.packet = packet;
-    new_packet.next = NULL;
+    new_packet->packet = packet;
+    new_packet->next = NULL;
 
     if(queue->tail != NULL){
         queue->tail->next = new_packet;
@@ -181,6 +183,7 @@ struct receiver_info{
     // int nextseqnum;
     int sem_readypkts; // semaphore to see if there are some packets ready to be read
     pthread_mutex_t mutex_rcvqueue; // mutex for access to received packets queue
+    pthread_mutex_t mutex_rcvbuf;
     pktqueue received_pkts; // queue where are stored received packets
     int *file_cells; // list of cells from receive buffer where the file is stored in
     int init_transfer_seq; // sequence number of the first cargo packet
@@ -399,13 +402,13 @@ ssize_t writen(int fd, const void *vptr, size_t n){
  *  return: descriptor of a new socket
  *  error: -1
  */
-int setsock(struct sockaddr_in addr, int seconds){
+int setsock2(struct sockaddr_in addr, int seconds){
     int sockd = -1;
     struct timeval tout;
 
     sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
 
-    check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
+    //check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
 
     tout.tv_sec = seconds;
     tout.tv_usec = 0;
