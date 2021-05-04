@@ -12,6 +12,8 @@ pthread_mutex_t mutex_rcvbuf; // mutex for access to receive buffer and free rcv
 // stack free_cells // which cells of rcvbuf are free
 pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
 pthread_mutex_t mtxlist;
+pthread_t ttid[CLIENT_NUMTHREADS + 1]; // TMP not to do in global, pass it to exit_handler
+
 /*
  *  function: request_op
  *  ----------------------------
@@ -85,9 +87,10 @@ printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:
 }
 
 void kill_handler(void *arg){
-    int me = (int)pthread_self();
+    struct receiver_info info = *((struct receiver_info *)arg);
+
     for(int i=0;i<WSIZE;i++){
-        pthread_cancel(ttid[i]);
+        //pthread_cancel();
     }
 };
 
@@ -144,6 +147,7 @@ printf("Can't dequeue packet from received_pkts\n");
         info.file_cells[cargo.seq-info.init_transfer_seq] = i;
 
         if(cargo.seq == info.rcvbase){
+            info.nextseqnum++; // TODO still necessary
             while(info.file_cells[info.rcvbase-info.init_transfer_seq] != -1) info.rcvbase++; // increase rcvbase for every packet already processed
             ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
 printf("[Client pid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
@@ -151,6 +155,7 @@ printf("[Client pid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pkt
 
             // TODO signal writer
         }else{
+            info.nextseqnum++; // TODO still necessary
             ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
 printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
@@ -189,6 +194,7 @@ printf("request_op:operation unsuccessful\n");
         pthread_exit(NULL);
     }
 
+    t_info.numpkts = synack.pktleft;
 	t_info.nextseqnum = synack.seq+1;
     t_info.sem_readypkts = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666), "get:semget:sem_rcvqueue");
     check(pthread_mutex_init(&mutex_rcvqueue, NULL), "get:pthread_mutex_init:mutex_rcvqueue");
@@ -210,15 +216,15 @@ printf("request_op:operation unsuccessful\n");
     check(sigaction(SIGLASTACK, &act_lastwrite, NULL), "get:sigaction:siglastack");
 
     for(int i=0; i<CLIENT_NUMTHREADS; i++){
-        pthread_create(&tid, NULL, (void *)receiver, (void *)&t_info);
+        pthread_create(&ttid[i], NULL, (void *)receiver, (void *)&t_info);
     }
-    pthread_create(&tid, NULL, (void *)write_onfile, (void *)&t_info); // what to pass? synack and more
+    pthread_create(&ttid[CLIENT_NUMTHREADS], NULL, (void *)write_onfile, (void *)&t_info); // what to pass? synack and more
 
 receive:
     check_mem(memset((void *)&cargo, 0, sizeof(struct pkt)/*HEADERSIZE + synack.size*/), "get:memset:ack");
     n = recv(sockd, &cargo, MAXTRANSUNIT, 0);
 
-    if(n==0){ goto receive; }
+    if(n==0 || (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1){ goto receive; }
 
     check(enqueue(&t_info.received_pkts, cargo), "get:enqueue:cargo");
 
@@ -453,7 +459,7 @@ void list(void *arg){
 
 printf("[Client] inizio trasferimento \n");
         sendpkt = malloc((numpkts) * sizeof(struct elab2)); // Alloca la memoria per thread che eseguiranno la get
-      /*  if(sendpkt == NULL){
+      //  if(sendpkt == NULL){
 printf("[Client]: ERRORE malloc sendpkt del file %s", filename);
             exit(EXIT_FAILURE);
     }
