@@ -31,7 +31,7 @@ void handler(int signum){
     for(int i=0;i<WSIZE;i++){
         pthread_cancel(ttid[i]);
     }
-    
+
 }
 
 
@@ -174,7 +174,7 @@ transmit:
     check(pthread_mutex_lock(&cargo.mutex_stack),"THREAD: error lock Stack");      //lock sulla struct stack_elem
 printf("ho preso il lock\n");
     int res=pop_pkt(cargo.stack,&sndpkt);
-    
+
 printf("ho fatto una pop %d \n",res);
 /*
     oper.sem_num = 0;                                                 //se pop_pkt a buon fine
@@ -403,7 +403,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
 			//TODO in sigaction
 
             for(j=0;j<WSIZE;j++){
-              if(pthread_create(&ttid[j], NULL, thread_sendpkt, (void *)&t_info) != 0){
+              if(pthread_create(&ttid[j], NULL, (void *)thread_sendpkt, (void *)&t_info) != 0){
 printf("server:ERRORE pthread_create GET in main");
                 exit(EXIT_FAILURE);
               }
@@ -605,19 +605,19 @@ printf("Creating elab [addr:%d][port:%d][op:%d][seq:%d][ack:%d][pktleft:%d][size
         switch (opdata.clipacket.op) {
 
             case SYNOP_LIST:
-                pthread_create(&tid, NULL, list, (void *)&opdata);
+                pthread_create(&tid, NULL, (void *)list, (void *)&opdata);
                 ++ongoing_operations;
 printf("Passed elab to child %d\n\n", tid);
                 break;
 
             case SYNOP_GET:
-                pthread_create(&tid, NULL, get, (void *)&opdata);
+                pthread_create(&tid, NULL, (void *)get, (void *)&opdata);
                 ++ongoing_operations;
 printf("Passed elab to child %d\n\n", tid);
                 break;
 
             case SYNOP_PUT:
-                //pthread_create(&tid, NULL, put, (void *)&opdata);
+                //pthread_create(&tid, NULL, (void *)put, (void *)&opdata);
                 ++ongoing_operations;
 printf("Passed elab to child %d\n\n", tid);
                 break;

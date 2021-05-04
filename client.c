@@ -6,7 +6,7 @@ struct sockaddr_in cliaddr; //TODEL
 socklen_t len;
 int initseqserver; // TODEL
 void **tstatus;
-char rcvbuf[CLIENT_RCVBUFSIZE*(DATASIZE)];
+char rcvbuf[CLIENT_RCVBUFSIZE*(DATASIZE)]; // if local
 index_stack free_pages_rcvbuf;
 pthread_mutex_t mutex_rcvbuf; // mutex for access to receive buffer and free rcvbuf indexes stack
 // stack free_cells // which cells of rcvbuf are free
@@ -59,7 +59,7 @@ printf("[Client tid:%d sockd:%d] Received ack from server [op:%d][seq:%d][ack:%d
 printf("Operation on server denied\n");
         *synack = makepkt(ACK_NEG, initseq, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
 printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
-        check(sendto(sockd, synack, HEADERSIZE + synack->size, 0, (struct sockaddr *)&child_servaddr, len) , "request_op:send:server denied");        
+        check(sendto(sockd, synack, HEADERSIZE + synack->size, 0, (struct sockaddr *)&child_servaddr, len) , "request_op:send:server denied");
         close(sockd);
         return -1;
     }
@@ -84,12 +84,15 @@ printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:
     return sockd;
 }
 
-void *lastwrite_handler(){
+void kill_handler(void *arg){
     int me = (int)pthread_self();
+    for(int i=0;i<WSIZE;i++){
+        pthread_cancel(ttid[i]);
+    }
 };
 
 // input: filename, numpkts, writebase_sem,
-void *write_onfile(){
+void write_onfile(void *arg){
     int me = (int)pthread_self();
     int last_write_made = -1; // from 0 to numpkts
     int n_bytes_to_write = DATASIZE;
@@ -112,12 +115,12 @@ void *write_onfile(){
 // kill(pid,LASTWRITE)
 }
 
-void *receiver(void *arg){
+void receiver(void *arg){
     int me = (int)pthread_self();
     struct sembuf wait_readypkts;
     struct pkt cargo, ack;
     int i;
-    struct receiver_info info=*((struct receiver_info *)arg);
+    struct receiver_info info = *((struct receiver_info *)arg);
     //&cargo = check_mem(malloc(sizeof(struct pkt)),"RECEIVER: malloc cargo");
 
 waitforpkt:
@@ -131,7 +134,7 @@ waitforpkt:
     if(dequeue(&info.received_pkts, &cargo) == -1){
 printf("Can't dequeue packet from received_pkts\n");
     }
-    pthread_mutex_unlock(&info.mutex_rcvqueue);
+    //pthread_mutex_unlock(&info.mutex_rcvqueue); TODEL if mutex_rcvbuf = mutex_rcvqueue
 
     pthread_mutex_lock(&info.mutex_rcvbuf);
 
@@ -141,10 +144,12 @@ printf("Can't dequeue packet from received_pkts\n");
         info.file_cells[cargo.seq-info.init_transfer_seq] = i;
 
         if(cargo.seq == info.rcvbase){
-            while(info.file_cells[info.rcvbase] != -1) info.rcvbase++; // increase rcvbase for every packet already processed
-            ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
+            while(info.file_cells[info.rcvbase-info.init_transfer_seq] != -1) info.rcvbase++; // increase rcvbase for every packet already processed
+            ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
 printf("[Client pid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
+
+            // TODO signal writer
         }else{
             ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
 printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
@@ -157,6 +162,7 @@ printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d
     }
 
     pthread_mutex_unlock(&info.mutex_rcvbuf);
+    pthread_mutex_unlock(&info.mutex_rcvqueue);
 
     check_mem(memset((void *)&cargo, 0, HEADERSIZE + cargo.size), "receiver:memset:cargo");
     check_mem(memset((void *)&ack, 0, HEADERSIZE + ack.size), "receiver:memset:ack");
@@ -165,11 +171,11 @@ printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d
 }
 
 // TODO move into get
-void *father(void *arg){
+void father(void *arg){
     int me = (int)pthread_self();
     int sockd;
     struct pkt synack, cargo;
-    char *filename = (char *)arg;
+    char *filename = (char *)arg; // TODO not necessary
     struct receiver_info t_info;
     pthread_mutex_t mutex_rcvqueue;
     struct sigaction act_lastwrite;
@@ -195,18 +201,18 @@ printf("request_op:operation unsuccessful\n");
     }
     // TODO can we use calloc that initialize file_cells with 0s? instead of malloc + for i [i] = -1
     t_info.init_transfer_seq = synack.ack + 1;
-    t_info.rcvbase = 1;
+    t_info.rcvbase = synack.ack + 1;
 
     memset (&act_lastwrite, 0, sizeof(struct sigaction));
-    //act_lastwrite.sa_handler = &lastwrite_handler;
+    //act_lastwrite.sa_handler = &kill_handler;
     sigemptyset(&act_lastwrite.sa_mask);
     act_lastwrite.sa_flags = 0;		//old:act.
     check(sigaction(SIGLASTACK, &act_lastwrite, NULL), "get:sigaction:siglastack");
 
     for(int i=0; i<CLIENT_NUMTHREADS; i++){
-        pthread_create(&tid, NULL, receiver, (void *)&t_info);
+        pthread_create(&tid, NULL, (void *)receiver, (void *)&t_info);
     }
-    pthread_create(&tid, NULL, write_onfile, (void *)&t_info); // what to pass? synack and more
+    pthread_create(&tid, NULL, (void *)write_onfile, (void *)&t_info); // what to pass? synack and more
 
 receive:
     check_mem(memset((void *)&cargo, 0, sizeof(struct pkt)/*HEADERSIZE + synack.size*/), "get:memset:ack");
@@ -224,92 +230,6 @@ receive:
     goto receive; // TODO goto->while
 }
 
-void *thread_sendpkt(int sockd, void *arg){
-    struct elab2 *cargo; // = sender_info t_info;
-    // then update common
-    struct pkt sndpkt, rcvack;
-
-    int me = (int)pthread_self();
-    struct sockaddr servaddr;
-
-    cargo = (struct elab2 *)arg;
-    me = (cargo->thpkt.seq) - (cargo->initialseq); // numero thread
-    sndpkt = makepkt(5, cargo->thpkt.seq, 0, cargo->thpkt.pktleft, cargo->thpkt.size, cargo->thpkt.data);
-printf("sono il thread # %d \n", me);
-
-    sendto(sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
-check_ack:
-    check(recvfrom(sockd, &rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "CLIENT-put-thread:recvfrom ack-client");
-    // lock buffer
-printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ack) - (cargo->initialseq) + 1);
-printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-
-    if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 0) {
-    cargo->p[(rcvack.ack) - (cargo->initialseq)] = (int)cargo->p[(rcvack.ack) - (cargo->initialseq)] + 1;
-    printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-    // unlock buffer
-
-printf("sono il thread # %d e muoio \n", me);
-pthread_exit(tstatus);
-    } else if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 2) {
-printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
-    (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
-printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-        // unlock buffer
-        goto check_ack;
-    }else{
-        (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
-printf("pacchetto già ricevuto aspetto per la fast retransmit \n");
-printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-        // unlock buffer
-        goto check_ack;
-    }
-}
-
-/*
- *  function: list
- *  ----------------------------
- *  Receive and print list sent by the server
- *
- *  return: -
- *  error: -
- */
-void *list(void *arg){
-    int n;
-    struct pkt listpkt;
-    int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
-
-    int me = (int)pthread_self();
-    int sockd;
-    struct pkt synack;
-    char *folder = (char *)arg;
-    struct sockaddr child_servaddr;
-
-    sockd = request_op(&synack, SYNOP_LIST, 0, folder);
-    if(sockd == -1){
-        printf("Operation op:%d seq:%d unsuccessful\n", synack.op, synack.seq);
-        pthread_exit(NULL);
-    }
-
-    check(getpeername(sockd, &child_servaddr, &len), "list:getpeername:child_servaddr");
-
-    // TODO
-    n = recvfrom(sockd, &listpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
-printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, sockd, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
-
-    if(n > 0){
-        printf("Available files on server:\n");
-            //buffer[n] = '\0';
-            fprintf(stdout, "%s", listpkt.data);
-            // lock(client-list.txt)
-            write(fd, listpkt.data, listpkt.size);
-            // unlock(client-list.txt)
-    }else{
-        printf("No available files on server\n");
-        write(fd, "No available files on server\n", 30);
-    }
-}
-
 /*
  *  function: get
  *  ----------------------------
@@ -321,7 +241,7 @@ printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%
  *  error: -
  */
  // OLD int get(int sockd, void *pathname, int pktleft)
-void *get(void *arg){
+void get(void *arg){
     int fd;
     size_t filesize;
     int numpkts,edgepkt;
@@ -405,6 +325,94 @@ printf("il file %s e' stato correttamente scaricato\n",filename);
 }
 
 /*
+void thread_sendpkt(int sockd, void *arg){
+    struct elab2 *cargo; // = sender_info t_info;
+    // then update common
+    struct pkt sndpkt, rcvack;
+
+    int me = (int)pthread_self();
+    struct sockaddr servaddr;
+
+    cargo = (struct elab2 *)arg;
+    me = (cargo->thpkt.seq) - (cargo->initialseq); // numero thread
+    sndpkt = makepkt(5, cargo->thpkt.seq, 0, cargo->thpkt.pktleft, cargo->thpkt.size, cargo->thpkt.data);
+printf("sono il thread # %d \n", me);
+
+    sendto(sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
+check_ack:
+    check(recvfrom(sockd, &rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "CLIENT-put-thread:recvfrom ack-client");
+    // lock buffer
+printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ack) - (cargo->initialseq) + 1);
+printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
+
+    if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 0) {
+    cargo->p[(rcvack.ack) - (cargo->initialseq)] = (int)cargo->p[(rcvack.ack) - (cargo->initialseq)] + 1;
+    printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
+    // unlock buffer
+
+printf("sono il thread # %d e muoio \n", me);
+pthread_exit(tstatus);
+    } else if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 2) {
+printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
+    (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
+printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
+        // unlock buffer
+        goto check_ack;
+    }else{
+        (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
+printf("pacchetto già ricevuto aspetto per la fast retransmit \n");
+printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
+        // unlock buffer
+        goto check_ack;
+    }
+}
+*/
+
+/*
+ *  function: list
+ *  ----------------------------
+ *  Receive and print list sent by the server
+ *
+ *  return: -
+ *  error: -
+ */
+void list(void *arg){
+    int n;
+    struct pkt listpkt;
+    int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
+
+    int me = (int)pthread_self();
+    int sockd;
+    struct pkt synack;
+    char *folder = (char *)arg;
+    struct sockaddr child_servaddr;
+
+    sockd = request_op(&synack, SYNOP_LIST, 0, folder);
+    if(sockd == -1){
+        printf("Operation op:%d seq:%d unsuccessful\n", synack.op, synack.seq);
+        pthread_exit(NULL);
+    }
+
+    check(getpeername(sockd, &child_servaddr, &len), "list:getpeername:child_servaddr");
+
+    // TODO
+    n = recvfrom(sockd, &listpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
+printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, sockd, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
+
+    if(n > 0){
+        printf("Available files on server:\n");
+            //buffer[n] = '\0';
+            fprintf(stdout, "%s", listpkt.data);
+            // lock(client-list.txt)
+            write(fd, listpkt.data, listpkt.size);
+            // unlock(client-list.txt)
+    }else{
+        printf("No available files on server\n");
+        write(fd, "No available files on server\n", 30);
+    }
+}
+
+/*
  *  function: put
  *  ----------------------------
  *  Upload a file to the server
@@ -475,7 +483,7 @@ printf("[Client]: inizializzato pacchetto[%d] size %d, pktleft %d, dati %s \n", 
 printf("%c", sendpkt[j].thpkt.data[z]);
             }
 
-            if(pthread_create(&tid[j], NULL, thread_sendpkt, (void *)&sendpkt[j]) != 0){
+            if(pthread_create(&tid[j], NULL, (void *)thread_sendpkt, (void *)&sendpkt[j]) != 0){
 printf("[Client]:ERROR in threads creation \n");
                 exit(EXIT_FAILURE);
             }
@@ -545,7 +553,7 @@ quickstart:
             case SYNOP_LIST:
                 // TODO ask for which path to list instead of SERVER_FOLDER
                 stpcpy(arg, SERVER_FOLDER); // TMP
-                pthread_create(&tid, NULL, list, (void *)arg);
+                pthread_create(&tid, NULL, (void *)list, (void *)arg);
                 pthread_join(tid, NULL); // TMP single-thread app
                 break;
 
@@ -553,7 +561,7 @@ quickstart:
                 printf("Type filename to get and press ENTER: ");
                 fscanf(stdin, "%s", arg);
                 fflush_stdin();
-                pthread_create(&tid, NULL, get, (void *)arg);
+                pthread_create(&tid, NULL, (void *)get, (void *)arg);
                 pthread_join(tid, NULL); // TMP single-thread app
                 break;
 
@@ -567,7 +575,7 @@ fselect:
                     printf("File not found\n");
                     goto fselect;
                 }
-                //pthread_create(&tid, NULL, put, (void *)arg);
+                //pthread_create(&tid, NULL, (void *)put, (void *)arg);
                 //pthread_join(tid, NULL); // TMP single-thread app
                 break;
 

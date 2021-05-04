@@ -55,36 +55,7 @@ struct stack_elem{
     struct pkt packet;
     struct stack_elem *next;
 };
-/*typedef struct stack_elem Pila;
-typedef Pila *pktstack;
-
-void push_pkt(pktstack *topPtr, struct pkt data){
-    pktstack newPtr;     //puntatore al nuovo nodo
-
-    newPtr = malloc(sizeof(Pila));
-    if (newPtr != NULL){
-        newPtr->packet = data;
-        newPtr->next = *topPtr;
-        *topPtr = newPtr;
-//printf("newPtr->packet.seq: %d %d\n",newPtr->packet.seq,&newPtr->packet.seq);
-        }else{// no space available
-printf("pacchetto %d non inserito nella pila\n",data.seq);
-    }
-}
-struct pkt pop_pkt(pktstack *topPtr){
-    pktstack tempPtr; //puntatore temporaneo al nodo
-    struct pkt popValue; //pacchetto rimosso
-    
-    tempPtr = *topPtr;
-printf("(*topPtr)->packet.seq: %d \n",(*topPtr)->packet.seq);
-    popValue = (*topPtr)->packet;
-    *topPtr = (tempPtr)->next;
-    free(tempPtr);
-    
-    return popValue;
-}*/
-
-typedef struct stack_elem *pktstack;  
+typedef struct stack_elem *pktstack;
 
 int push_pkt(pktstack *s, struct pkt p){
     pktstack new = malloc(sizeof(struct stack_elem));
@@ -92,8 +63,8 @@ int push_pkt(pktstack *s, struct pkt p){
     new->packet = p;
     new->next = *s;
     *s = new;
-    return 0; 
-    
+    return 0;
+
 }
  int pop_pkt(pktstack *s, struct pkt *res){
      if(*s == NULL) return -1;
@@ -102,8 +73,8 @@ int push_pkt(pktstack *s, struct pkt p){
      *s = (*s)->next;
      free(tmp);
      return 0;
-     
-}  // struct sender_info{ pktstack *stack; };
+
+}
 
 struct sender_info{
     pktstack *stack; //puntatore a struct stack_elem
@@ -212,6 +183,7 @@ struct receiver_info{
     int *file_cells; // list of cells from receive buffer where the file is stored in
     int init_transfer_seq; // sequence number of the first cargo packet
     int rcvbase; // base number of the receive window (less recent packet to ack)
+    int last_packet_size; // size of last cargo in transfer, used for final write on file
 };
 
 /*
