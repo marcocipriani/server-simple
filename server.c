@@ -7,6 +7,7 @@ int connsd;
 struct sockaddr_in listen_addr;
 socklen_t len;
 struct sockaddr_in cliaddr; // TODEL cliaddr->getpeername(sockd)
+pthread_mutex_t mtxlist;
 char *msg;
 char rcvbuf[45000]; // buffer per la put
 void **tstatus;
@@ -502,7 +503,7 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
 }*/
 
 /*
- *  function: makelist
+ *  function: createlist
  *  ----------------------------
  *  Print list on
  *
@@ -512,38 +513,88 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
  *  return: -
  *  error: -
  */
-void makelist(char **res, const char *path){
-    char command[DATASIZE];
-    FILE *file;
+ void createlist(char **res, const char *path) {
 
-    sprintf(command, "ls %s | cat > list.txt", path);
-    system(command);
+        int fdl;
+        int i;
+        int n_entry;
+        DIR *dirp = NULL;
+        struct dirent **filename;
 
-    file = fopen("list.txt", "r");
-    fread(*res, DATASIZE, 1, file);
-}
+        //PRENDO IL LOCK IL MUTEX
+        check(pthread_mutex_lock(&mtxlist),"Server:pthread_mutexlist_lock");
+
+          check_mem(dirp = opendir(path),"list nell'apertura della directory");
+
+          printf("CONTENUTO DELLA CARTELLA [%s] \n",path);
+          /*Crea un file che contiene la filelist*/
+
+          check(fdl = open("list.txt",O_CREAT | O_RDWR | O_TRUNC,0644),"server:open server_files.txt");
+
+          check(n_entry =scandir(path,&filename,NULL,alphasort) ,"server:scandir");
+
+          for(i = 0; i < n_entry; i++){
+              printf("%s \n",filename[i]->d_name);
+              dprintf(fdl,"%s\n",filename[i]->d_name);
+          }
+
+          closedir(dirp);
+          dirp = NULL;
+
+        //LASCIO IL MUTEX
+        check(pthread_mutex_unlock(&mtxlist),"server:pthread_mutex_lock");
+
+ }
 
 /*
  *  function: list
  *  ----------------------------
- *  Execute makelist function and send the result to the client
+ *  Execute createlist function and send the result to the client
  *
  *  return: -
  *  error: -
  */
-void *list(){
-    int me = (int)pthread_self();
-    char *res = malloc(((DATASIZE)-1)*sizeof(char)); // client has to put \0 at the end
-    char **resptr = &res;
-    struct pkt listpkt;
-    int opersd; // TMP returned from setop
-    int nextseqnum = 0; // TMP
+ void list(void *arg) {
+     //char *res = malloc(((DATASIZE)-1)*sizeof(char)); // client has to put \0 at the end
+     //char **resptr = &res;
+     struct pkt listpkt;
+     struct pkt rcvack;
+     struct elab synop = *((struct elab*)arg);
+     struct pkt synack;
+     int fdl;
+     int aux;
+     char dati[DATASIZE];
+     int n;
+     int opersd;
 
-    makelist(resptr, spath);
-    listpkt = makepkt(CARGO, nextseqnum, 1, 1, strlen(res), res);
-printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
-    check(sendto(opersd, &listpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)), "main:sendto");
-}
+
+     opersd = serve_op(&synack, synop);
+     if(opersd < 0){
+ printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipacket.seq);
+         pthread_exit(NULL);
+     }
+
+     createlist(resptr, spath);
+     check(fdl = open("list.txt",O_RDONLY,0644),"server:open server_files.txt");
+
+     aux = read(fdl, dati, DATASIZE);
+
+     listpkt = makepkt(CARGO, synack.ack + 1, 0, 0, aux, dati);
+
+ printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
+     check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
+ printf("[Server] Waiting for ack...\n");
+     n = recv(opersd, &rcvack, MAXTRANSUNIT, 0); // TMP cliaddr parsed from sender_info
+     if(n<1){
+ printf("No ack response from client\n");
+         close(opersd);
+     }
+     if(rcvack.ack == listpkt.seq){
+ printf("It's ok, i received ack about listpkt \n");
+     }else{
+ printf("there are problems, not response ack from client \n");
+     }
+ }
 
 int main(int argc, char const *argv[]){
     struct pkt synop, ack; // ack only when rejecting packets with bad op code

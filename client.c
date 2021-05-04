@@ -11,7 +11,7 @@ index_stack free_pages_rcvbuf;
 pthread_mutex_t mutex_rcvbuf; // mutex for access to receive buffer and free rcvbuf indexes stack
 // stack free_cells // which cells of rcvbuf are free
 pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
-
+pthread_mutex_t mtxlist;
 /*
  *  function: request_op
  *  ----------------------------
@@ -377,39 +377,43 @@ printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initia
  *  error: -
  */
 void list(void *arg){
-    int n;
-    struct pkt listpkt;
-    int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
 
-    int me = (int)pthread_self();
-    int sockd;
-    struct pkt synack;
-    char *folder = (char *)arg;
-    struct sockaddr child_servaddr;
+      char *folder = (char *)arg;
+      int me = (int)pthread_self();
+      int sockd;
+      struct pkt synack;
+      struct pkt ack;
+      struct sockaddr child_servaddr;
+      struct pkt listpkt;
+      int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
+      int n;
 
-    sockd = request_op(&synack, SYNOP_LIST, 0, folder);
-    if(sockd == -1){
-        printf("Operation op:%d seq:%d unsuccessful\n", synack.op, synack.seq);
-        pthread_exit(NULL);
-    }
+      sockd = request_op(&synack, SYNOP_LIST, 0, folder);
+      if(sockd == -1){
+          printf("Operation op:%d seq:%d unsuccessful\n", synack.op, synack.seq);
+          pthread_exit(NULL);
+      }
 
-    check(getpeername(sockd, &child_servaddr, &len), "list:getpeername:child_servaddr");
+      check(getpeername(sockd, &child_servaddr, &len), "list:getpeername:child_servaddr");
 
-    // TODO
-    n = recvfrom(sockd, &listpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
-printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, sockd, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
+      n = recvfrom(sockd, &listpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
+  printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, sockd, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
 
-    if(n > 0){
-        printf("Available files on server:\n");
-            //buffer[n] = '\0';
-            fprintf(stdout, "%s", listpkt.data);
-            // lock(client-list.txt)
-            write(fd, listpkt.data, listpkt.size);
-            // unlock(client-list.txt)
-    }else{
-        printf("No available files on server\n");
-        write(fd, "No available files on server\n", 30);
-    }
+      if(n > 0){
+          printf("Available files on server:\n");
+              //buffer[n] = '\0';
+              pthread_mutex_lock(&mtxlist);
+              write(fd, listpkt.data, listpkt.size);
+              pthread_mutex_unlock(&mtxlist);
+              fprintf(stdout, "%s", listpkt.data); //stampa a schermo il contenuto del pacchetto
+      }else{
+          printf("No available files on server\n");
+          write(fd, "No available files on server\n", 30);
+      }
+  printf("[Client pid:%d sockd:%d] Sending ack to server \n",me, sockd);
+      ack = makepkt(ACK_POS, 0,listpkt.seq, listpkt.pktleft,strlen(CARGO_OK), CARGO_OK);
+      check(send(sockd, &ack, ack.size, 0), "list:send:ack");
+
 }
 
 /*
@@ -532,6 +536,7 @@ printf("Welcome to server-simple app, client #%d\n", me);
     check(inet_pton(AF_INET, SERVER_ADDR, &main_servaddr.sin_addr), "main:init:inet_pton");
     free_pages_rcvbuf = check_mem(malloc(CLIENT_RCVBUFSIZE * sizeof(struct index)), "main:init:malloc:free_pages_rcvbuf");
     check(pthread_mutex_init(&mutex_rcvbuf, NULL), "main:pthread_mutex_init:mutex_rcvbuf");
+    check(pthread_mutex_init(&mtxlist, NULL), "main:pthread_mutex_init:mtxlist");
     if(argc == 2){
         cmd = atoi(argv[1]);
         goto quickstart;
