@@ -4,7 +4,7 @@
 struct sockaddr_in main_servaddr;
 struct sockaddr_in cliaddr; //TODEL
 socklen_t len;
-int nextseqnum,initseqserver; // TODEL
+int initseqserver; // TODEL
 void **tstatus;
 char rcvbuf[CLIENT_RCVBUFSIZE*(DATASIZE)];
 index_stack free_pages_rcvbuf;
@@ -26,24 +26,25 @@ pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
  *  error: 0
  */
 int request_op(struct pkt *synack, int cmd, int pktleft, char *arg){
-    int me = (int)pthread_self();
+    pthread_t me = pthread_self();
     int sockd;
     struct pkt synop, ack;
     struct sockaddr_in child_servaddr;
     int initseq;
-    int n;
+    int n, input;
 
     sockd = setsock(main_servaddr, CLIENT_TIMEOUT);
 
     //initseq = arc4random_uniform(MAXSEQNUM);
     srand((unsigned int)time(0));
     initseq=rand()%100;
+    check_mem(memset((void *)&synop, 0, sizeof(struct pkt)), "request_op:memset:synop");
     synop = makepkt(cmd, initseq, 0, pktleft, strlen(arg), arg);
 
-printf("[Client pid:%d sockd:%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
+printf("[Client tid:%d sockd:%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
     check(sendto(sockd, &synop, HEADERSIZE + synop.size, 0, (struct sockaddr *)&main_servaddr, sizeof(struct sockaddr_in)) , "request_op:sendto:synop");
 
-printf("[Client pid:%d sockd:%d] Waiting for ack in max %d seconds...\n", me, sockd, CLIENT_TIMEOUT);
+printf("[Client tid:%d sockd:%d] Waiting for ack in max %d seconds...\n", me, sockd, CLIENT_TIMEOUT);
     n = recvfrom(sockd, (struct pkt *)&ack, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
 
     if(n==0){
@@ -52,7 +53,7 @@ printf("No ack response from server\n");
         close(sockd);
         return -1;
     }
-printf("[Client pid:%d sockd:%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+printf("[Client tid:%d sockd:%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
     if(ack.op == ACK_NEG && ack.ack == synop.seq){
 printf("Operation on server denied\n");
@@ -62,18 +63,18 @@ printf("Operation on server denied\n");
 
     if(ack.op == ACK_POS && ack.ack == synop.seq){
         printf("Operation op:%d seq:%d permitted, estimated packets: %d\nContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
-        fflush_stdin();
-        if(getchar()=='n'){
+		input = getchar();
+        if(input=='n'){
             cmd = ACK_NEG;
         }else{
             cmd = ACK_POS;
             check(connect(sockd, (struct sockaddr *)&child_servaddr, len), "request_op:connect:child_servaddr");
         }
 
-        nextseqnum++;
-        *synack = makepkt(cmd, nextseqnum, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
+        initseq++;
+        *synack = makepkt(cmd, initseq, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
 
-printf("[Client pid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
+printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
         check(send(sockd, synack, HEADERSIZE + synack->size, 0) , "request_op:send");
     }
 
@@ -138,16 +139,16 @@ printf("Can't dequeue packet from received_pkts\n");
 
         if(cargo.seq == info.rcvbase){
             while(info.file_cells[info.rcvbase] != -1) info.rcvbase++; // increase rcvbase for every packet already processed
-            ack = makepkt(ACK_POS, nextseqnum, info.rcvbase, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
+            ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
 printf("[Client pid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
         }else{
-            ack = makepkt(ACK_POS, nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
+            ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
 printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
         }
     }else{
-        ack = makepkt(ACK_POS, nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
+        ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
 printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
         check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
     }
@@ -179,6 +180,7 @@ printf("request_op:operation unsuccessful\n");
         pthread_exit(NULL);
     }
 
+	t_info.nextseqnum = synack.seq+1;
     t_info.sem_readypkts = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666), "get:semget:sem_rcvqueue");
     check(pthread_mutex_init(&mutex_rcvqueue, NULL), "get:pthread_mutex_init:mutex_rcvqueue");
     t_info.mutex_rcvqueue = mutex_rcvqueue;
@@ -346,7 +348,7 @@ printf("local %s\n",localpathname);
 
     numpkts = synack.pktleft;
     edgepkt=numpkts; /*#pkt totali del file da ricevere SOLUZIONE: do + while!!!*/
-    initseqserver = synack.seq + 1;
+    initseqserver = synack.ack + 1;
     rcv_base=initseqserver; //per ora initseqserver è globale
     rltv_base=1;
 

@@ -25,6 +25,12 @@ int freespacebuf2(int totpkt){
     }
 }
 
+void handler(int signum){
+	printf("Server operation completed \n\n");
+}
+
+
+
 /*
  *  function: check_validity
  *  ----------------------------
@@ -39,7 +45,7 @@ int freespacebuf2(int totpkt){
  *  error: ACK_NEG
  */
 int check_validity(char **status, int *pktleft, int op, char *arg){
-    char *filename, localpathname[strlen(CLIENT_FOLDER) + (DATASIZE)];
+    char *filename, localpathname[strlen(SERVER_FOLDER) + (DATASIZE)];
 
     switch (op) {
         case SYNOP_LIST:
@@ -77,6 +83,7 @@ printf("Valid operation on this server\n");
  *  return: socket id, synack packet
  *  error: -1
  */
+
 int serve_op(struct pkt *synack, struct elab opdata){
     int me = (int)pthread_self();
     struct pkt ack;
@@ -194,12 +201,12 @@ printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ac
 printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initialseq), cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]);
 
     if(n>0){
-      if(rcvack.ack-(*(cargo.base))>WSIZE || rcvack.ack<base-1){    //ack fuori finestra
+      if(rcvack.ack-(*(cargo.base))>WSIZE || rcvack.ack<(*(cargo.base)-1)){    //ack fuori finestra
         check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
         goto check_ack;
       }
-      if(rcvack.ack >= base){   //ricevo un ack nella finestra
-          for (k=base;k<=rcvack.ack;k++){
+      if(rcvack.ack >= *(cargo.base)){   //ricevo un ack nella finestra
+          for (k=*(cargo.base);k<=rcvack.ack;k++){
             //se pktlft=seq relative..da fare
             cargo.ack_counters[k - (cargo.initialseq)] = (int)cargo.ack_counters[k - (cargo.initialseq)] + 1; //sottraggo il num.seq iniziale
             (*(cargo.base))++; //da controllare
@@ -210,11 +217,12 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initia
 
             check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global at received ack ");
   printf("valore aggiornato in counter[%d] : %d \n", k - (cargo.initialseq), cargo.ack_counters[k - (cargo.initialseq)]);
+
           }
           check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
-          if(rcvack.ack == cargo.initialseq+cargo.numpkt){//if(rcvack.pktlft==0)
+          if(rcvack.ack+1 == cargo.initialseq+cargo.numpkt){//if(rcvack.pktlft==0)
   printf("GET:Ho riscontrato l'ultimo ack del file\n");
-              kill(cargo.father_pid,SIGLASTACK);  //finito il file-il padre dovrà mandare un ack
+              pthread_kill(cargo.father_pid,SIGLASTACK);  //finito il file-il padre dovrà mandare un ack
               pthread_exit(NULL);
           }
             goto transmit;
@@ -383,6 +391,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
             t_info.timeout_Interval = &timeout_Interval;
             t_info.father_pid = tid;
 
+			signal(SIGLASTACK,handler);
 
             for(j=0;j<WSIZE;j++){
               if(pthread_create(&ttid[j], NULL, thread_sendpkt, (void *)&t_info) != 0){
@@ -393,7 +402,6 @@ printf("server:ERRORE pthread_create GET in main");
 
 
           //signal(SIGRETRANSMIT,push_base);//usa sigaction
-          //signal(SIGLASTACK,handler);
           //signal(/*stop timer-base aggiornata*/);
           while((base-init)<=numpkt){
             oper.sem_num = 0;
@@ -574,9 +582,12 @@ printf("[Server pid:%d sockd:%d] Received synop [op:%d][seq:%d][ack:%d][pktleft:
         // TODO if ongoing_operations >= BACKLOG send negative ack and goto recvfrom synop
 
         // Prepare op for child
-        check_mem(memset(&opdata, 0, sizeof(struct elab)), "main:memset:opdata");
+        check_mem(memset(&opdata.cliaddr, 0, sizeof(struct sockaddr_in)), "main:memset:opdata.cliaddr");
+        check_mem(memset(&opdata.clipacket, 0, sizeof(struct pkt)), "main:memset:opdata.clipacket");
+printf("%s",opdata.clipacket.data);
         memcpy(&opdata.cliaddr, &cliaddr, len);
-        opdata.clipacket = makepkt(synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, &synop.data);
+        check_mem(memset(&opdata.clipacket.data, 0, DATASIZE), "main:memset:opdata.clipacket");
+        opdata.clipacket = makepkt(synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
 printf("Creating elab [addr:%d][port:%d][op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", opdata.cliaddr.sin_addr.s_addr, opdata.cliaddr.sin_port, opdata.clipacket.op, opdata.clipacket.seq, opdata.clipacket.ack, opdata.clipacket.pktleft, opdata.clipacket.size, opdata.clipacket.data);
 
         /*** Operation selection ***/

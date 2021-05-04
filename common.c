@@ -180,7 +180,7 @@ int dequeue(pktqueue *queue, struct pkt *packet){
 struct receiver_info{
     int sockd; // socket where to perform the operation
     int numpkts; // total packets of the file to be received
-    // int nextseqnum;
+    int nextseqnum;
     int sem_readypkts; // semaphore to see if there are some packets ready to be read
     pthread_mutex_t mutex_rcvqueue; // mutex for access to received packets queue
     pthread_mutex_t mutex_rcvbuf;
