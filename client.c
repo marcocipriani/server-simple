@@ -100,6 +100,7 @@ void write_onfile(void *arg){
     int last_write_made = -1; // from 0 to numpkts
     int n_bytes_to_write = DATASIZE;
     int fd;
+    char *localpathname;
     struct receiver_info t_info;
 
     //fd = open();
@@ -111,7 +112,7 @@ void write_onfile(void *arg){
 //       if (lastwriten==numpkts)
 //         nByteToWrite=lastpktsize
 //       write(fd,rcvbuf[k],nByteToWrite)
-//       push_pkt(fifo pkts, k)
+//       free indexes --push_pkt(fifo pkts, k)---
 //       lastwriten++
 //     /unlock mutex_rcvbuf
     }
@@ -137,12 +138,14 @@ waitforpkt:
     if(dequeue(&info.received_pkts, &cargo) == -1){
 printf("Can't dequeue packet from received_pkts\n");
     }
+printf("Client %d has dequeue packet %d\n", me, cargo.seq-info.init_transfer_seq);
     //pthread_mutex_unlock(&info.mutex_rcvqueue); TODEL if mutex_rcvbuf = mutex_rcvqueue
 
     pthread_mutex_lock(&info.mutex_rcvbuf);
 
     if(info.file_cells[cargo.seq - info.init_transfer_seq] == -1){ // packet still not processed
         i = check(pop_index(&free_pages_rcvbuf), "receiver:pop_index:free_pages_rcvbuf");
+printf("Client %d has decided to store packet %d in rcvbuf[%d]\n", me, cargo.seq-info.init_transfer_seq, i);
         check_mem(memcpy(&rcvbuf[i*(DATASIZE)], &cargo, cargo.size), "receiver:memcpy:cargo");
         info.file_cells[cargo.seq-info.init_transfer_seq] = i;
 
@@ -195,7 +198,7 @@ printf("request_op:operation unsuccessful\n");
     }
 
     t_info.numpkts = synack.pktleft;
-	t_info.nextseqnum = synack.seq+1;
+    t_info.nextseqnum = synack.seq+1;
     t_info.sem_readypkts = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666), "get:semget:sem_rcvqueue");
     check(pthread_mutex_init(&mutex_rcvqueue, NULL), "get:pthread_mutex_init:mutex_rcvqueue");
     t_info.mutex_rcvqueue = mutex_rcvqueue;
@@ -208,6 +211,7 @@ printf("request_op:operation unsuccessful\n");
     // TODO can we use calloc that initialize file_cells with 0s? instead of malloc + for i [i] = -1
     t_info.init_transfer_seq = synack.ack + 1;
     t_info.rcvbase = synack.ack + 1;
+    t_info.filename = filename;
 
     memset (&act_lastwrite, 0, sizeof(struct sigaction));
     //act_lastwrite.sa_handler = &kill_handler;
@@ -223,8 +227,15 @@ printf("request_op:operation unsuccessful\n");
 receive:
     check_mem(memset((void *)&cargo, 0, sizeof(struct pkt)/*HEADERSIZE + synack.size*/), "get:memset:ack");
     n = recv(sockd, &cargo, MAXTRANSUNIT, 0);
+printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
 
-    if(n==0 || (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1){ goto receive; }
+    if(n==0 || // nothing received
+        (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 || // packet with seq out of range
+        (cargo.seq - t_info.init_transfer_seq) < t_info.rcvbase-1){ // packet processed yet
+        goto receive;
+    }
+    if( (cargo.seq - t_info.init_transfer_seq) == t_info.numpkts-1)
+        t_info.last_packet_size = cargo.size;
 
     check(enqueue(&t_info.received_pkts, cargo), "get:enqueue:cargo");
 
@@ -254,7 +265,6 @@ void get(void *arg){
     int pos,lastpktsize,rcv_base,rltv_base;
     char *localpathname;
     struct pkt cargo, ack;
-
     int me = (int)pthread_self();
     char *filename = (char *)arg;
     int sockd;
@@ -294,6 +304,7 @@ printf("pos: %d \n",pos);
 printf("numero sequenza pacchetto ricevuto fuori range \n");
                 //return 0;
             }
+
             else if((rcvbuf[pos*(DATASIZE)])==0){ // PKT NELL'INTERVALLO CORRETTO E NON ANCORA RICEVUTO
 //printf("VALORE PACCHETTO %d \n",(initseqserver+edgepkt-1));
                 if(cargo.seq == (initseqserver+edgepkt-1)){

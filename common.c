@@ -66,13 +66,13 @@ int push_pkt(pktstack *s, struct pkt p){
     return 0;
 
 }
- int pop_pkt(pktstack *s, struct pkt *res){
-     if(*s == NULL) return -1;
-     *res = (*s)->packet;
-     pktstack tmp = *s;
-     *s = (*s)->next;
-     free(tmp);
-     return 0;
+int pop_pkt(pktstack *s, struct pkt *res){
+    if(*s == NULL) return -1;
+    *res = (*s)->packet;
+    pktstack tmp = *s;
+    *s = (*s)->next;
+    free(tmp);
+    return 0;
 
 }
 
@@ -184,6 +184,7 @@ struct receiver_info{
     int init_transfer_seq; // sequence number of the first cargo packet
     int rcvbase; // base number of the receive window (less recent packet to ack)
     int last_packet_size; // size of last cargo in transfer, used for final write on file
+    char *filename; // name of the file to receive
 };
 
 /*
