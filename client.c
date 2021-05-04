@@ -26,7 +26,7 @@ pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
  *  error: 0
  */
 int request_op(struct pkt *synack, int cmd, int pktleft, char *arg){
-    pthread_t me = pthread_self();
+    int me = (int)pthread_self();
     int sockd;
     struct pkt synop, ack;
     struct sockaddr_in child_servaddr;
@@ -437,7 +437,7 @@ printf("il file %s e' stato correttamente scaricato\n",filename);
     // alloc space for all the packets to send and copy them from file
 
 printf("[Client] inizio trasferimento \n");
-        sendpkt = malloc((numpkts) * sizeof(struct elab2)); /*Alloca la memoria per thread che eseguiranno la get */
+        sendpkt = malloc((numpkts) * sizeof(struct elab2)); // Alloca la memoria per thread che eseguiranno la get
       /*  if(sendpkt == NULL){
 printf("[Client]: ERRORE malloc sendpkt del file %s", filename);
             exit(EXIT_FAILURE);

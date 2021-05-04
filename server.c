@@ -55,10 +55,9 @@ int check_validity(char **status, int *pktleft, int op, char *arg){
         case SYNOP_GET:
             //filename = check_mem(malloc(strlen(arg) * (sizeof(char))), "check_validity:malloc:filename");
             sprintf(localpathname, "%s%s", SERVER_FOLDER, arg);
-printf("\tcheck_validity op:%d arg:%s filename:%s\n", op, arg, localpathname);
             if ((*pktleft = calculate_numpkts(localpathname)) == -1){
                 *status = "File not available";
-printf("Invalid operation on this server\n");
+printf("check_validity: Invalid operation on this server\n");
                 return ACK_NEG;
             }
             *status = "File available";
@@ -68,7 +67,7 @@ printf("Invalid operation on this server\n");
             *status = "ok"; // TMP
             break;
     }
-printf("Valid operation on this server\n");
+printf("check_validity: Valid operation on this server\n");
     return ACK_POS;
 }
 
@@ -584,10 +583,12 @@ printf("[Server pid:%d sockd:%d] Received synop [op:%d][seq:%d][ack:%d][pktleft:
         // Prepare op for child
         check_mem(memset(&opdata.cliaddr, 0, sizeof(struct sockaddr_in)), "main:memset:opdata.cliaddr");
         check_mem(memset(&opdata.clipacket, 0, sizeof(struct pkt)), "main:memset:opdata.clipacket");
-printf("%s",opdata.clipacket.data);
+
+
+        //check_mem(memset(&opdata.clipacket.data, 0, DATASIZE), "main:memset:opdata.clipacket");
+
         memcpy(&opdata.cliaddr, &cliaddr, len);
-        check_mem(memset(&opdata.clipacket.data, 0, DATASIZE), "main:memset:opdata.clipacket");
-        opdata.clipacket = makepkt(synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
+        opdata.clipacket = makepkt(synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, synop.data);
 printf("Creating elab [addr:%d][port:%d][op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", opdata.cliaddr.sin_addr.s_addr, opdata.cliaddr.sin_port, opdata.clipacket.op, opdata.clipacket.seq, opdata.clipacket.ack, opdata.clipacket.pktleft, opdata.clipacket.size, opdata.clipacket.data);
 
         /*** Operation selection ***/
