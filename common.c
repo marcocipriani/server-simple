@@ -55,34 +55,58 @@ struct stack_elem{
     struct pkt packet;
     struct stack_elem *next;
 };
-typedef struct stack_elem *pktstack;
+/*typedef struct stack_elem Pila;
+typedef Pila *pktstack;
 
 void push_pkt(pktstack *topPtr, struct pkt data){
     pktstack newPtr;     //puntatore al nuovo nodo
 
-    newPtr = malloc(sizeof(struct stack_elem));
+    newPtr = malloc(sizeof(Pila));
     if (newPtr != NULL){
         newPtr->packet = data;
         newPtr->next = *topPtr;
         *topPtr = newPtr;
-    }else{// no space available
+//printf("newPtr->packet.seq: %d %d\n",newPtr->packet.seq,&newPtr->packet.seq);
+        }else{// no space available
 printf("pacchetto %d non inserito nella pila\n",data.seq);
     }
 }
 struct pkt pop_pkt(pktstack *topPtr){
     pktstack tempPtr; //puntatore temporaneo al nodo
     struct pkt popValue; //pacchetto rimosso
-
+    
     tempPtr = *topPtr;
+printf("(*topPtr)->packet.seq: %d \n",(*topPtr)->packet.seq);
     popValue = (*topPtr)->packet;
-    *topPtr = (*topPtr)->next;
+    *topPtr = (tempPtr)->next;
     free(tempPtr);
-
+    
     return popValue;
+}*/
+
+typedef struct stack_elem *pktstack;  
+
+int push_pkt(pktstack *s, struct pkt p){
+    pktstack new = malloc(sizeof(struct stack_elem));
+    if(new == NULL) return -1;
+    new->packet = p;
+    new->next = *s;
+    *s = new;
+    return 0; 
+    
 }
+ int pop_pkt(pktstack *s, struct pkt *res){
+     if(*s == NULL) return -1;
+     *res = (*s)->packet;
+     pktstack tmp = *s;
+     *s = (*s)->next;
+     free(tmp);
+     return 0;
+     
+}  // struct sender_info{ pktstack *stack; };
 
 struct sender_info{
-    pktstack stack; //puntatore a struct stack_elem
+    pktstack *stack; //puntatore a struct stack_elem
     int semLoc;              //descrittore semaforo local
     int semTimer;
     pthread_mutex_t mutex_time;

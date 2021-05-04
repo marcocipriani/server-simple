@@ -57,6 +57,9 @@ printf("[Client tid:%d sockd:%d] Received ack from server [op:%d][seq:%d][ack:%d
 
     if(ack.op == ACK_NEG && ack.ack == synop.seq){
 printf("Operation on server denied\n");
+        *synack = makepkt(ACK_NEG, initseq, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
+printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
+        check(sendto(sockd, synack, HEADERSIZE + synack->size, 0, (struct sockaddr *)&child_servaddr, len) , "request_op:send:server denied");        
         close(sockd);
         return -1;
     }
@@ -75,7 +78,7 @@ printf("Operation on server denied\n");
         *synack = makepkt(cmd, initseq, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
 
 printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
-        check(send(sockd, synack, HEADERSIZE + synack->size, 0) , "request_op:send");
+        check(send(sockd, synack, HEADERSIZE + synack->size, 0) , "request_op:send:synack");
     }
 
     return sockd;

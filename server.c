@@ -11,6 +11,7 @@ char *msg;
 char rcvbuf[45000]; // buffer per la put
 void **tstatus;
 char *spath = SERVER_FOLDER; // root folder for server
+pthread_t *ttid;
 
 int freespacebuf2(int totpkt){
     size_t totpktsize;
@@ -27,6 +28,10 @@ int freespacebuf2(int totpkt){
 
 void handler(int signum){
 	printf("Server operation completed \n\n");
+    for(int i=0;i<WSIZE;i++){
+        pthread_cancel(ttid[i]);
+    }
+    
 }
 
 
@@ -152,6 +157,7 @@ void *thread_sendpkt(void *arg){
     socklen_t len;
 
 transmit:
+    memset(&sndpkt,0,sizeof(struct pkt));
     oper.sem_num = 0;
     oper.sem_op = -1;
     oper.sem_flg = SEM_UNDO;
@@ -166,7 +172,10 @@ transmit:
     check(semop(SemSnd_Wndw,&oper,1),"THREAD: error wait global");    //wait su semGlob
 
     check(pthread_mutex_lock(&cargo.mutex_stack),"THREAD: error lock Stack");      //lock sulla struct stack_elem
-    sndpkt = pop_pkt(&cargo.stack);
+printf("ho preso il lock\n");
+    int res=pop_pkt(cargo.stack,&sndpkt);
+    
+printf("ho fatto una pop %d \n",res);
 /*
     oper.sem_num = 0;                                                 //se pop_pkt a buon fine
     oper.sem_op = 1;                                                  //signal a semGlobal
@@ -175,11 +184,11 @@ transmit:
     check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global");
 */
     pthread_mutex_unlock(&cargo.mutex_stack);   //unlock struct stack_elem
-
+printf("ho rilasciato il lock\n");
     //sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in));
     check(send(cargo.sockid, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
 
-    pthread_mutex_trylock(&cargo.mutex_time);
+/*    pthread_mutex_trylock(&cargo.mutex_time);
     if (*(cargo.timer) == 0){       //avviso il padre di dormire per timeout_Interval
       //----->lock timer
       *(cargo.timer)=1;  //corretto scritto cosi?
@@ -190,7 +199,7 @@ transmit:
 
       check(semop(cargo.semTimer,&oper,1),"THREAD: error signal semTimer");
     }
-    check(pthread_mutex_unlock(&cargo.mutex_time),"THREAD: error unlock time");
+    check(pthread_mutex_unlock(&cargo.mutex_time),"THREAD: error unlock time");*/
 check_ack:
     n=recvfrom(opersd, &rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len);
 
@@ -271,7 +280,7 @@ void *get(void *arg){ // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     struct pkt *sendpkt;
     int fd;
     int i, j, k, z;
-    pthread_t *ttid,tid;
+    pthread_t tid/*,*ttid*/;
     int *counter;
     int aux,oldBase;
     char *dati;
@@ -358,6 +367,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
             for (z=numpkt-1; z>=0;z--){
               push_pkt(&stackPtr, sendpkt[z]);
             }
+
             /*****INIZIALIZZAZIONE SEMAFORI E MUTEX**********/
             check(pthread_mutex_init(&mtxTime,NULL),"GET: errore pthread_mutex_init time");
 
@@ -373,7 +383,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
 
             //preparo il t_info da passare ai thread
 
-            t_info.stack = stackPtr;
+            t_info.stack = &stackPtr;
             t_info.semLoc = semPkt_to_send;
             t_info.semTimer = semTimer;
             t_info.mutex_time = mtxTime;
@@ -390,7 +400,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
             t_info.timeout_Interval = &timeout_Interval;
             t_info.father_pid = tid;
 
-			signal(SIGLASTACK,handler);
+			//TODO in sigaction
 
             for(j=0;j<WSIZE;j++){
               if(pthread_create(&ttid[j], NULL, thread_sendpkt, (void *)&t_info) != 0){
@@ -399,11 +409,11 @@ printf("server:ERRORE pthread_create GET in main");
               }
             }
 
-
+            signal(SIGLASTACK,handler);
           //signal(SIGRETRANSMIT,push_base);//usa sigaction
           //signal(/*stop timer-base aggiornata*/);
           while((base-init)<=numpkt){
-            oper.sem_num = 0;
+            /*oper.sem_num = 0;
             oper.sem_op = -1;
             oper.sem_flg = SEM_UNDO;
 
@@ -411,7 +421,7 @@ printf("server:ERRORE pthread_create GET in main");
             check(pthread_mutex_lock(&mtxTime),"GET: error lock time");
             oldBase=base;
             usleep(timeout_Interval);
-            if (counter[oldBase - init]==0){ //if (oldBase==base)   //RITRASMISSIONE
+            /*if (counter[oldBase - init]==0){ //if (oldBase==base)   //RITRASMISSIONE
               push_pkt(&stackPtr,sendpkt[oldBase - init]);  //o handler()signal(sem_pkts_to_send)
 
               oper.sem_num = 0;                                                 //se RITRASMISSIONE
@@ -427,7 +437,7 @@ printf("server:ERRORE pthread_create GET in main");
               check(semop(SemSnd_Wndw,&oper,1),"GET: error signal semGlobal ");
             }
             timer=0;
-            check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");
+            check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");*/
           }
           //return 1;
 
