@@ -270,16 +270,10 @@ void get(void *arg){
     int semTimer,semPkt_to_send;
     struct sender_info t_info;
     struct sigaction act_lastack;
-
     struct elab synop = *((struct elab*)arg);
     struct pkt synack;
     int opersd;
-
     char *filename, *localpathname;
-    int numpkt = synack.pktleft;
-    int iseq = synack.ack + 1;
-    int base = synack.ack + 1;
-    int init = synack.ack + 1;
     struct sembuf oper;
     struct timespec start;
     int timer;
@@ -291,6 +285,11 @@ void get(void *arg){
 printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipacket.seq);
         pthread_exit(NULL);
     }
+
+    int numpkt = synack.pktleft;
+    int iseq = synack.ack + 1;
+    int base = synack.ack + 1;
+    int init = synack.ack + 1;
 
     startRTT.start=&start;
     startRTT.seq=-1;
@@ -310,13 +309,16 @@ printf("Thread %d: inizio trasferimento \n", me);
     sendpkt = malloc((numpkt) * sizeof(struct pkt)); /*Alloca la memoria per thread che eseguiranno la get */
     check_mem(sendpkt, "get:malloc:sendpkt");
 
-    check_mem((counter = malloc(numpkt*sizeof(int))), "get:malloc:counter");
-    check_mem((ttid = malloc(WSIZE*sizeof(pthread_t))), "get:malloc:ttid");
-    // TODO if numpkt < WSIZE
-
+    counter = malloc(numpkt*sizeof(int));
+    check_mem(counter, "get:malloc:counter");
     for(z=0; z<numpkt; z++){
         counter[z] = 0; // inizializza a 0 il counter
     }
+
+    ttid = malloc(WSIZE*sizeof(pthread_t));
+    check_mem(ttid, "get:malloc:ttid");
+
+    // TODO if numpkt < WSIZE
 
     filedata = (char *)malloc(DATASIZE);
     for (j = 0; j < numpkt; j++) {

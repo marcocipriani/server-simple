@@ -240,7 +240,7 @@ printf("request_op:operation unsuccessful\n");
     for(int i=0; i<CLIENT_NUMTHREADS; i++){
         pthread_create(&ttid[i], NULL, (void *)receiver, (void *)&t_info);
     }
-    pthread_create(&ttid[CLIENT_NUMTHREADS], NULL, (void *)writer, (void *)&t_info); // what to pass? synack and more
+    pthread_create(&ttid[CLIENT_NUMTHREADS], NULL, (void *)writer, (void *)&t_info);
 
     memset(&act_lastwrite, 0, sizeof(struct sigaction));
     act_lastwrite.sa_handler = &kill_handler;
@@ -318,52 +318,52 @@ printf("local %s\n",localpathname);
     rltv_base=1;
 
 receiver:
-        while(numpkts>0){
-            check(recvfrom(sockd,&cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len), "GET-client:recvfrom Cargo");
+    while(numpkts>0){
+        check(recvfrom(sockd,&cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len), "GET-client:recvfrom Cargo");
 printf("pacchetto ricevuto: seq %d, ack %d, pktleft %d, size %d, data %s \n", cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
-            pos=(cargo.seq - initseqserver);
+        pos=(cargo.seq - initseqserver);
 printf("cargo->seq: %d \n",cargo.seq);
 printf("initseqserver: %d \n",initseqserver);
 printf("pos: %d \n",pos);
 
-            if(pos>edgepkt && pos<0){   //PKT FUORI INTERVALLO
+        if(pos>edgepkt && pos<0){   //PKT FUORI INTERVALLO
 printf("numero sequenza pacchetto ricevuto fuori range \n");
-                //return 0;
-            }
-
-            else if((rcvbuf[pos*(DATASIZE)])==0){ // PKT NELL'INTERVALLO CORRETTO E NON ANCORA RICEVUTO
-//printf("VALORE PACCHETTO %d \n",(initseqserver+edgepkt-1));
-                if(cargo.seq == (initseqserver+edgepkt-1)){
-                    lastpktsize = cargo.size;
-                }
-                memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
-
-                if(cargo.seq == rcv_base){
-                    ack = makepkt(ACK_POS, 0, cargo.seq, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
-                    rcv_base++;
-                }
-                else{   //teoricamente se cargo.seq>rcv_base
-                    ack = makepkt(ACK_POS, 0, rcv_base - 1, numpkts - (rcv_base - initseqserver), strlen(CARGO_OK), CARGO_OK);
-                }
-
-                check(send(sockd, &ack, ack.size, 0), "get:send:new-cargo-ack");
-printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
-            }
-            else{           //PKT NELL'INTERVALLO CORRETTO MA GIA' RICEVUTO
-printf("pacchetto già ricevuto, posso scartarlo \n");
-                ack = makepkt(ACK_POS, 0, rcv_base - 1, numpkts - (rcv_base - initseqserver), strlen(CARGO_OK), CARGO_OK);
-                check(send(sockd, &ack, ack.size, 0), "get:send:duplicated-cargo-ack");
-                goto receiver; // il pacchetto viene scartato
-            }
-            numpkts--;
+            //return 0;
         }
 
-        filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
-        fd = open(localpathname,O_RDWR|O_TRUNC|O_CREAT,0666);
-        writen(fd,rcvbuf,filesize);
+        else if((rcvbuf[pos*(DATASIZE)])==0){ // PKT NELL'INTERVALLO CORRETTO E NON ANCORA RICEVUTO
+//printf("VALORE PACCHETTO %d \n",(initseqserver+edgepkt-1));
+            if(cargo.seq == (initseqserver+edgepkt-1)){
+                lastpktsize = cargo.size;
+            }
+            memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
+
+            if(cargo.seq == rcv_base){
+                ack = makepkt(ACK_POS, 0, cargo.seq, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
+                rcv_base++;
+            }
+            else{   //teoricamente se cargo.seq>rcv_base
+                ack = makepkt(ACK_POS, 0, rcv_base - 1, numpkts - (rcv_base - initseqserver), strlen(CARGO_OK), CARGO_OK);
+            }
+
+            check(send(sockd, &ack, ack.size, 0), "get:send:new-cargo-ack");
+printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
+        }
+        else{           //PKT NELL'INTERVALLO CORRETTO MA GIA' RICEVUTO
+printf("pacchetto già ricevuto, posso scartarlo \n");
+            ack = makepkt(ACK_POS, 0, rcv_base - 1, numpkts - (rcv_base - initseqserver), strlen(CARGO_OK), CARGO_OK);
+            check(send(sockd, &ack, ack.size, 0), "get:send:duplicated-cargo-ack");
+            goto receiver; // il pacchetto viene scartato
+        }
+        numpkts--;
+    }
+
+    filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
+    fd = open(localpathname,O_RDWR|O_TRUNC|O_CREAT,0666);
+    writen(fd,rcvbuf,filesize);
 printf("Thread %d: il file %s e' stato correttamente scaricato\n", me, filename);
-		memset(rcvbuf, 0, (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize );
-        //return 1;
+    memset(rcvbuf, 0, (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize );
+    //return 1;
 
 }
 
