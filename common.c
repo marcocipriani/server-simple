@@ -177,8 +177,9 @@ struct receiver_info{
     int numpkts; // total packets of the file to be received
     int nextseqnum;
     int sem_readypkts; // semaphore to see if there are some packets ready to be read
+    int sem_writebase; // semaphore to write base packet (and next contingous processed packets) on rcvbuf
     pthread_mutex_t mutex_rcvqueue; // mutex for access to received packets queue
-    pthread_mutex_t mutex_rcvbuf;
+    pthread_mutex_t mutex_rcvbuf; // mutex for access to global rcvbuf and its associated free indexes stack (and in the same lock to local file_cells)
     pktqueue received_pkts; // queue where are stored received packets
     int *file_cells; // list of cells from receive buffer where the file is stored in
     int init_transfer_seq; // sequence number of the first cargo packet

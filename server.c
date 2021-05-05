@@ -12,7 +12,7 @@ char *msg;
 char rcvbuf[45000]; // buffer per la put
 void **tstatus;
 char *spath = SERVER_FOLDER; // root folder for server
-pthread_t *ttid;
+pthread_t *ttid; // TODO sigqueue from writer to father
 
 int freespacebuf2(int totpkt){
     size_t totpktsize;
@@ -655,19 +655,19 @@ printf("Creating elab [addr:%d][port:%d][op:%d][seq:%d][ack:%d][pktleft:%d][size
             case SYNOP_LIST:
                 pthread_create(&tid, NULL, (void *)list, (void *)&opdata);
                 ++ongoing_operations;
-printf("Passed elab to child %d\n\n", (me)tid);
+printf("Passed elab to child %d\n\n", ((me)tid));
                 break;
 
             case SYNOP_GET:
                 pthread_create(&tid, NULL, (void *)get, (void *)&opdata);
                 ++ongoing_operations;
-printf("Passed elab to child %d\n\n", (me)tid);
+printf("Passed elab to child %d\n\n", ((me)tid));
                 break;
 
             case SYNOP_PUT:
                 //pthread_create(&tid, NULL, (void *)put, (void *)&opdata);
                 ++ongoing_operations;
-printf("Passed elab to child %d\n\n", (me)tid);
+printf("Passed elab to child %d\n\n", ((me)tid));
                 break;
 
             default:
