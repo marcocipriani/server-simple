@@ -109,7 +109,7 @@ void writer(void *arg){
 printf("Thread writer %d starts writing on localpathname:%s\n", me, localpathname);
     fd = open(localpathname, O_WRONLY|O_CREAT|O_TRUNC, 0666);
 
-    while(last_write_made <= info.numpkts){
+    while(last_write_made < info.numpkts){
         wait_writebase.sem_num = 0;
         wait_writebase.sem_op = -1;
         wait_writebase.sem_flg = SEM_UNDO;
@@ -119,13 +119,15 @@ printf("Thread writer %d starts writing on localpathname:%s\n", me, localpathnam
 
         while(info.file_cells[last_write_made] != -1){
             free_index = info.file_cells[last_write_made];
-
-            if(last_write_made == info.numpkts)
-                n_bytes_to_write = info.last_packet_size;
+            if(last_write_made == info.numpkts-1)
+                n_bytes_to_write = *info.last_packet_size;
+printf("before rcvbuf[0]:%c%c%c%c%c\n", rcvbuf[30], rcvbuf[31], rcvbuf[32], rcvbuf[33], rcvbuf[34]);
             write(fd, &rcvbuf[free_index], n_bytes_to_write);
+printf("after rcvbuf[0]:%c%c%c%c%c\n", rcvbuf[30], rcvbuf[31], rcvbuf[32], rcvbuf[33], rcvbuf[34]);
             check_mem(memset(&rcvbuf[free_index], 0, DATASIZE), "receiver:memset:rcvbuf[free_index]");
             check(push_index(&free_pages_rcvbuf, free_index), "receiver:push_index");
-            ++last_write_made;
+            last_write_made = last_write_made +1;
+            if(last_write_made == info.numpkts) break;
         }
 
         pthread_mutex_unlock(&info.mutex_rcvbuf);
@@ -153,6 +155,8 @@ waitforpkt:
     wait_readypkts.sem_flg = SEM_UNDO;
     check(semop(info.sem_readypkts, &wait_readypkts, 1), "receiver:semop:sem_readypkts");
 
+    printf("Receiver sees %d in info.file_cells[0]\n", info.file_cells[0]);
+
     pthread_mutex_lock(&info.mutex_rcvqueue);
     if(dequeue(info.received_pkts, &cargo) == -1){
 printf("Can't dequeue packet from received_pkts\n");
@@ -165,12 +169,15 @@ printf("Client %d has dequeue packet %d\n", me, cargo.seq-info.init_transfer_seq
     if(info.file_cells[cargo.seq - info.init_transfer_seq] == -1){ // packet still not processed
         i = check(pop_index(&free_pages_rcvbuf), "receiver:pop_index:free_pages_rcvbuf");
 printf("Client %d has decided to store packet %d in rcvbuf[%d]\n", me, cargo.seq-info.init_transfer_seq, i);
-        check_mem(memcpy(&rcvbuf[i*(DATASIZE)], &cargo, cargo.size), "receiver:memcpy:cargo");
+        check_mem(memcpy(&rcvbuf[i*(DATASIZE)], &cargo.data, cargo.size), "receiver:memcpy:cargo");
         info.file_cells[cargo.seq-info.init_transfer_seq] = i;
 
         if(cargo.seq == *info.rcvbase){
             (*info.nextseqnum)++; // TODO still necessary
-            while(info.file_cells[(*info.rcvbase)-info.init_transfer_seq] != -1) (*info.rcvbase)++; // increase rcvbase for every packet already processed
+            while(info.file_cells[(*info.rcvbase)-info.init_transfer_seq] != -1){
+                (*info.rcvbase)++; // increase rcvbase for every packet already processed
+                if((*info.rcvbase)-info.init_transfer_seq == info.numpkts) break;
+            }
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
 printf("[Client pid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
@@ -238,8 +245,8 @@ printf("request_op:handshake successful\n");
     t_info.init_transfer_seq = synack.ack + 1;
     t_info.rcvbase = check_mem(malloc(sizeof(int)), "get:malloc:rcvbase");
     *t_info.rcvbase = synack.ack + 1;
+    t_info.last_packet_size = check_mem(malloc(sizeof(int)), "get:malloc:last_packet_size");
     t_info.filename = filename;
-printf("TINFO COMPLETED\n");
 
     for(int i=0; i<CLIENT_NUMTHREADS; i++){
         pthread_create(&ttid[i], NULL, (void *)receiver, (void *)&t_info);
@@ -265,7 +272,7 @@ printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:
         goto receive;
     }
     if( (cargo.seq - t_info.init_transfer_seq) == t_info.numpkts-1)
-        t_info.last_packet_size = cargo.size;
+        *t_info.last_packet_size = cargo.size;
 
     check(enqueue(t_info.received_pkts, cargo), "get:enqueue:cargo");
 

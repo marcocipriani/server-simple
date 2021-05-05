@@ -178,7 +178,7 @@ struct receiver_info{
     int *file_cells; // list of cells from receive buffer where the file is stored in
     int init_transfer_seq; // sequence number of the first cargo packet
     int *rcvbase; // base number of the receive window (less recent packet to ack)
-    int last_packet_size; // size of last cargo in transfer, used for final write on file
+    int *last_packet_size; // size of last cargo in transfer, used for final write on file
     char *filename; // name of the file to receive
 };
 
