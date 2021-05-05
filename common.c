@@ -97,7 +97,6 @@ struct index{
     struct index *next;
 };
 typedef struct index *index_stack;
-void init_index_stack(index_stack *stack);
 int push_index(index_stack *stack, int new_index){
     index_stack new = malloc(sizeof(struct index));
     if(new == NULL) return -1; // no fatal exit
@@ -118,6 +117,11 @@ int pop_index(index_stack *stack){
     free(tmp);
     return res;
 }
+void init_index_stack(index_stack *stack, int n){
+    for(int i=n-1;i>=0;i--){
+        push_index(stack, i);
+    }
+};
 
 struct queue_elem{
     struct pkt packet;
