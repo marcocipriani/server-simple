@@ -159,7 +159,6 @@ printf("Client %d print first pos file.cells %d e index:%d e rcvbase %d \n",me,i
 
         if(cargo.seq == info.rcvbase){
             info.nextseqnum++; // TODO still necessary
-<<<<<<< HEAD
 
             while(info.file_cells[info.rcvbase-info.init_transfer_seq] != -1) {
 		         printf("info.rcvbase-info.init_transfer_seq: %d \n", info.rcvbase-info.init_transfer_seq);
@@ -168,9 +167,6 @@ printf("Client %d print first pos file.cells %d e index:%d e rcvbase %d \n",me,i
 		         }
 printf("er brekke funzia e te dico pure la socket %d \n",info.sockd);
 
-=======
-            while(info.file_cells[info.rcvbase-info.init_transfer_seq] != -1) info.rcvbase++; // increase rcvbase for every packet already processed
->>>>>>> 4c835913fabec8be0a2b71518a518f8a4c69d081
             ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
 printf("[Client pid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
@@ -216,10 +212,7 @@ printf("request_op:operation unsuccessful\n");
         pthread_exit(NULL);
     }
 
-<<<<<<< HEAD
 
-=======
->>>>>>> 4c835913fabec8be0a2b71518a518f8a4c69d081
     t_info.numpkts = synack.pktleft;
     t_info.nextseqnum = synack.seq+1;
     t_info.sem_readypkts = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666), "get:semget:sem_rcvqueue");
@@ -253,7 +246,6 @@ printf("request_op:operation unsuccessful\n");
 
 receive:
     check_mem(memset((void *)&cargo, 0, sizeof(struct pkt)/*HEADERSIZE + synack.size*/), "get:memset:ack");
-<<<<<<< HEAD
     n = recv(t_info.sockd, &cargo, MAXTRANSUNIT, 0);
 printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, t_info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
 
@@ -268,18 +260,6 @@ printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:
 
     check(enqueue(t_info.received_pkts, cargo), "get:enqueue:cargo");
 printf("pacchetto messo nella coda con numero %d \n",t_info.received_pkts->head->packet.seq);
-=======
-    n = recv(sockd, &cargo, MAXTRANSUNIT, 0);
-printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
-
-    if(n==0 || // nothing received
-        (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 || // packet with seq out of range
-        (cargo.seq - t_info.init_transfer_seq) < t_info.rcvbase-1){ // packet processed yet
-        goto receive;
-    }
-    if( (cargo.seq - t_info.init_transfer_seq) == t_info.numpkts-1)
-        t_info.last_packet_size = cargo.size;
->>>>>>> 4c835913fabec8be0a2b71518a518f8a4c69d081
 
 
     signal_readypkts.sem_num = 0;
@@ -626,11 +606,7 @@ quickstart:
                 printf("Type filename to get and press ENTER: ");
                 fscanf(stdin, "%s", arg);
                 fflush_stdin();
-<<<<<<< HEAD
                 pthread_create(&tid, NULL, (void *)father, (void *)arg);
-=======
-                pthread_create(&tid, NULL, (void *)get, (void *)arg);
->>>>>>> 4c835913fabec8be0a2b71518a518f8a4c69d081
                 pthread_join(tid, NULL); // TMP single-thread app
                 break;
 
