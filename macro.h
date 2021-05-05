@@ -17,7 +17,7 @@
 
 // Sender signals
 #define SIGRETRANSMIT SIGUSR1
-#define SIGLASTACK SIGUSR2
+#define SIGFINAL SIGUSR2
 
 // Packet settings
 #define MAXTRANSUNIT 1500

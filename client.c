@@ -12,7 +12,7 @@ pthread_mutex_t mutex_rcvbuf; // mutex for access to receive buffer and free rcv
 // stack free_cells // which cells of rcvbuf are free
 pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
 pthread_mutex_t mtxlist;
-pthread_t ttid[CLIENT_NUMTHREADS + 1]; // TMP not to do in global, pass it to exit_handler
+pthread_t ttid[CLIENT_NUMTHREADS + 2]; // TMP not to do in global, pass it to exit_handler
 
 /*
  *  function: request_op
@@ -35,7 +35,7 @@ int request_op(struct pkt *synack, int cmd, int pktleft, char *arg){
     int initseq;
     int n, input;
 
-    sockd = setsock(main_servaddr, CLIENT_TIMEOUT);
+    sockd = check(setsock(main_servaddr, CLIENT_TIMEOUT), "request_op:setsock");
 
     //initseq = arc4random_uniform(MAXSEQNUM);
     srand((unsigned int)time(0));
@@ -86,29 +86,30 @@ printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:
     return sockd;
 }
 
-void kill_handler(void *arg){
-    struct receiver_info info = *((struct receiver_info *)arg);
+void kill_handler(){
+    //struct receiver_info info = *((struct receiver_info *)arg);
 
-    for(int i=0;i<WSIZE;i++){
-        //pthread_cancel();
+    for(int i=0;i<CLIENT_NUMTHREADS;i++){
+        pthread_cancel(ttid[i]);
     }
+    pthread_exit(NULL);
 };
 
-// input: filename, numpkts, writebase_sem,
-void write_onfile(void *arg){
+void writer(void *arg){
     int me = (int)pthread_self();
-    int last_write_made; // from 0 to numpkts
+    int last_write_made = 0; // from 0 to numpkts
     struct sembuf wait_writebase;
     int n_bytes_to_write = DATASIZE;
     int fd;
-    char *localpathname;
-    struct receiver_info t_info;
+    char *localpathname = check_mem(malloc(DATASIZE+strlen(CLIENT_FOLDER)*sizeof(char)), "writer:malloc:localpathname");
+    struct receiver_info info = *((struct receiver_info *)arg);
     int free_index;
 
-    sprintf(localpathname, "%s%s", CLIENT_FOLDER, t_info.filename);
+    sprintf(localpathname, "%s%s", CLIENT_FOLDER, info.filename);
+printf("Thread writer %d starts writing on localpathname:%s\n", me, localpathname);
     fd = open(localpathname, O_WRONLY|O_CREAT|O_TRUNC, 0666);
 
-    while(last_write_made <= t_info.numpkts){
+    while(last_write_made <= info.numpkts){
         wait_writebase.sem_num = 0;
         wait_writebase.sem_op = -1;
         wait_writebase.sem_flg = SEM_UNDO;
@@ -116,12 +117,12 @@ void write_onfile(void *arg){
 
         pthread_mutex_lock(&info.mutex_rcvbuf);
 
-        while(t_info.file_cells[last_write_made] != -1){
-            free_index = t_info.file_cells[last_write_made];
+        while(info.file_cells[last_write_made] != -1){
+            free_index = info.file_cells[last_write_made];
 
-            if(last_write_made == t_info.numpkts)
-                n_bytes_to_write = t_info.last_packet_size;
-            write(fd, rcvbuf[k], n_bytes_to_write);
+            if(last_write_made == info.numpkts)
+                n_bytes_to_write = info.last_packet_size;
+            write(fd, &rcvbuf[free_index], n_bytes_to_write);
 
             check(push_index(free_pages_rcvbuf, free_index), "receiver:push_index");
             ++last_write_made;
@@ -131,7 +132,9 @@ void write_onfile(void *arg){
     }
 
     close(fd);
-// kill(pid,LASTWRITE)
+
+    pthread_kill(ttid[CLIENT_NUMTHREADS + 1], SIGFINAL);
+    pthread_exit(NULL);
 }
 
 void receiver(void *arg){
@@ -151,7 +154,7 @@ waitforpkt:
     check(semop(info.sem_readypkts, &wait_readypkts, 1), "receiver:semop:sem_readypkts");
 
     pthread_mutex_lock(&info.mutex_rcvqueue);
-    if(dequeue(&info.received_pkts, &cargo) == -1){
+    if(dequeue(info.received_pkts, &cargo) == -1){
 printf("Can't dequeue packet from received_pkts\n");
     }
 printf("Client %d has dequeue packet %d\n", me, cargo.seq-info.init_transfer_seq);
@@ -165,26 +168,26 @@ printf("Client %d has decided to store packet %d in rcvbuf[%d]\n", me, cargo.seq
         check_mem(memcpy(&rcvbuf[i*(DATASIZE)], &cargo, cargo.size), "receiver:memcpy:cargo");
         info.file_cells[cargo.seq-info.init_transfer_seq] = i;
 
-        if(cargo.seq == info.rcvbase){
-            info.nextseqnum++; // TODO still necessary
-            while(info.file_cells[info.rcvbase-info.init_transfer_seq] != -1) info.rcvbase++; // increase rcvbase for every packet already processed
-            ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
+        if(cargo.seq == *info.rcvbase){
+            (*info.nextseqnum)++; // TODO still necessary
+            while(info.file_cells[(*info.rcvbase)-info.init_transfer_seq] != -1) (*info.rcvbase)++; // increase rcvbase for every packet already processed
+            ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
 printf("[Client pid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
 
-            // tell the thread doing write_onfile to write base cargo packet
+            // tell the thread doing writer to write base cargo packet
             signal_writebase.sem_num = 0;
             signal_writebase.sem_op = 1;
             signal_writebase.sem_flg = SEM_UNDO;
-            check(semop(t_info.sem_writebase, &signal_writebase, 1), "get:semop:signal:sem_writebase");
+            check(semop(info.sem_writebase, &signal_writebase, 1), "get:semop:signal:sem_writebase");
         }else{
-            info.nextseqnum++; // TODO still necessary
-            ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
+            (*info.nextseqnum)++; // TODO still necessary
+            ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
 printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
         }
     }else{
-        ack = makepkt(ACK_POS, info.nextseqnum, info.rcvbase-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
+        ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
 printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
         check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
     }
@@ -206,7 +209,6 @@ void father(void *arg){
     struct receiver_info t_info;
     pthread_mutex_t mutex_rcvqueue;
     struct sigaction act_lastwrite;
-    pthread_t tid; // unused
     int n;
     struct sembuf signal_readypkts;
 
@@ -217,34 +219,36 @@ printf("request_op:operation unsuccessful\n");
     }
 
     t_info.numpkts = synack.pktleft;
-    t_info.nextseqnum = synack.seq+1;
+    *t_info.nextseqnum = synack.seq+1;
     t_info.sem_readypkts = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666), "get:semget:sem_rcvqueue");
     check(semctl(t_info.sem_readypkts, 0, SETVAL, 0), "get:semctl:sem_readypkts");
     t_info.sem_writebase = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666), "get:semget:sem_writebase");
     check(semctl(t_info.sem_writebase, 0, SETVAL, 0), "get:semctl:sem_readypkts");
     check(pthread_mutex_init(&mutex_rcvqueue, NULL), "get:pthread_mutex_init:mutex_rcvqueue");
     t_info.mutex_rcvqueue = mutex_rcvqueue;
-    t_info.mutex_rcvbuf=mutex_rcvbuf;
-    init_queue(&t_info.received_pkts);
+    t_info.mutex_rcvbuf = mutex_rcvbuf;
+    init_queue(t_info.received_pkts);
     t_info.file_cells = check_mem(malloc(synack.pktleft * sizeof(int)), "get:malloc:file_cells");
     for(int i=0; i<synack.pktleft; i++){
         t_info.file_cells[i] = -1;
     }
     // TODO can we use calloc that initialize file_cells with 0s? instead of malloc + for i [i] = -1
     t_info.init_transfer_seq = synack.ack + 1;
-    t_info.rcvbase = synack.ack + 1;
+    *t_info.rcvbase = synack.ack + 1;
     t_info.filename = filename;
-
-    memset (&act_lastwrite, 0, sizeof(struct sigaction));
-    //act_lastwrite.sa_handler = &kill_handler;
-    sigemptyset(&act_lastwrite.sa_mask);
-    act_lastwrite.sa_flags = 0;		//old:act.
-    check(sigaction(SIGLASTACK, &act_lastwrite, NULL), "get:sigaction:siglastack");
 
     for(int i=0; i<CLIENT_NUMTHREADS; i++){
         pthread_create(&ttid[i], NULL, (void *)receiver, (void *)&t_info);
     }
-    pthread_create(&ttid[CLIENT_NUMTHREADS], NULL, (void *)write_onfile, (void *)&t_info); // what to pass? synack and more
+    pthread_create(&ttid[CLIENT_NUMTHREADS], NULL, (void *)writer, (void *)&t_info); // what to pass? synack and more
+
+    memset(&act_lastwrite, 0, sizeof(struct sigaction));
+    act_lastwrite.sa_handler = &kill_handler;
+    sigemptyset(&act_lastwrite.sa_mask);
+    act_lastwrite.sa_flags = 0;
+    check(sigaction(SIGFINAL, &act_lastwrite, NULL), "get:sigaction:siglastwrite");
+
+    ttid[CLIENT_NUMTHREADS+1] = pthread_self();
 
 receive:
     check_mem(memset((void *)&cargo, 0, sizeof(struct pkt)/*HEADERSIZE + synack.size*/), "get:memset:ack");
@@ -253,13 +257,13 @@ printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:
 
     if(n==0 || // nothing received
         (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 || // packet with seq out of range
-        (cargo.seq - t_info.init_transfer_seq) < (t_info.rcvbase-t_info.init_transfer_seq)-1){ // packet processed yet
+        (cargo.seq - t_info.init_transfer_seq) < ((*t_info.rcvbase)-t_info.init_transfer_seq)-1){ // packet processed yet
         goto receive;
     }
     if( (cargo.seq - t_info.init_transfer_seq) == t_info.numpkts-1)
         t_info.last_packet_size = cargo.size;
 
-    check(enqueue(&t_info.received_pkts, cargo), "get:enqueue:cargo");
+    check(enqueue(t_info.received_pkts, cargo), "get:enqueue:cargo");
 
     signal_readypkts.sem_num = 0;
     signal_readypkts.sem_op = 1;
@@ -281,13 +285,13 @@ printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:
  */
  // OLD int get(int sockd, void *pathname, int pktleft)
 void get(void *arg){
+    int me = (int)pthread_self();
     int fd;
     size_t filesize;
     int numpkts,edgepkt;
     int pos,lastpktsize,rcv_base,rltv_base;
     char *localpathname;
     struct pkt cargo, ack;
-    int me = (int)pthread_self();
     char *filename = (char *)arg;
     int sockd;
     struct pkt synack;
@@ -357,7 +361,7 @@ printf("pacchetto già ricevuto, posso scartarlo \n");
         filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
         fd = open(localpathname,O_RDWR|O_TRUNC|O_CREAT,0666);
         writen(fd,rcvbuf,filesize);
-printf("il file %s e' stato correttamente scaricato\n",filename);
+printf("Thread %d: il file %s e' stato correttamente scaricato\n", me, filename);
 		memset(rcvbuf, 0, (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize );
         //return 1;
 
@@ -573,7 +577,7 @@ printf("Welcome to server-simple app, client #%d\n", me);
     main_servaddr.sin_family = AF_INET;
     main_servaddr.sin_port = htons(SERVER_PORT);
     check(inet_pton(AF_INET, SERVER_ADDR, &main_servaddr.sin_addr), "main:init:inet_pton");
-    *free_pages_rcvbuf = check_mem(malloc(CLIENT_RCVBUFSIZE * sizeof(struct index)), "main:init:malloc:free_pages_rcvbuf");
+    free_pages_rcvbuf = check_mem(malloc(CLIENT_RCVBUFSIZE * sizeof(struct index *)), "main:init:malloc:free_pages_rcvbuf");
     check(pthread_mutex_init(&mutex_rcvbuf, NULL), "main:pthread_mutex_init:mutex_rcvbuf");
     check(pthread_mutex_init(&mtxlist, NULL), "main:pthread_mutex_init:mtxlist");
     if(argc == 2){

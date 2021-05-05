@@ -38,13 +38,6 @@ struct elab{
     struct pkt clipacket;
 };
 
-// TODEL after thread_sendpkt changes to thread_info
-struct elab2{
-    int initialseq;   //numero sequenza iniziale per un dato file
-    int *p;          //puntatore a array di contatori (ricezione ack)
-    struct pkt thpkt;
-};
-
 // RTT
 struct sample{
     struct timespec *start;
@@ -56,24 +49,26 @@ struct stack_elem{
     struct stack_elem *next;
 };
 typedef struct stack_elem *pktstack;
-
 int push_pkt(pktstack *s, struct pkt p){
     pktstack new = malloc(sizeof(struct stack_elem));
     if(new == NULL) return -1;
+
     new->packet = p;
     new->next = *s;
     *s = new;
+
     return 0;
 
 }
 int pop_pkt(pktstack *s, struct pkt *res){
     if(*s == NULL) return -1;
+
     *res = (*s)->packet;
     pktstack tmp = *s;
     *s = (*s)->next;
+
     free(tmp);
     return 0;
-
 }
 
 struct sender_info{
@@ -102,11 +97,11 @@ struct index{
     struct index *next;
 };
 typedef struct index *index_stack;
-
 void init_index_stack(index_stack *stack);
 int push_index(index_stack *stack, int new_index){
     index_stack new = malloc(sizeof(struct index));
     if(new == NULL) return -1; // no fatal exit
+
     new->value = new_index;
     new->next = *stack;
     *stack = new;
@@ -132,16 +127,14 @@ typedef struct{
     struct queue_elem *head;
     struct queue_elem *tail;
 } pktqueue;
-
 void init_queue(pktqueue *queue){
     queue->head = NULL;
     queue->tail = NULL;
 }
 int enqueue(pktqueue *queue, struct pkt packet){
-    struct queue_elem *new_packet;
+    struct queue_elem *new_packet = malloc(sizeof(struct queue_elem));
+    if(new_packet == NULL){ return -1; }
 
-    new_packet = (struct queue_elem *)malloc(sizeof(struct queue_elem));//????
-    if(new_packet == NULL) return -1; // no fatal exit
     new_packet->packet = packet;
     new_packet->next = NULL;
 
@@ -149,7 +142,6 @@ int enqueue(pktqueue *queue, struct pkt packet){
         queue->tail->next = new_packet;
     }
     queue->tail = new_packet;
-
     if(queue->head == NULL){
         queue->head = new_packet;
     }
@@ -157,12 +149,10 @@ int enqueue(pktqueue *queue, struct pkt packet){
     return 0;
 }
 int dequeue(pktqueue *queue, struct pkt *packet){
-    if(queue->head == NULL) return -1;
-
+    if(queue->head == NULL){ return -1; }
     struct queue_elem *tmp = queue->head;
 
     *packet = tmp->packet;
-
     queue->head = queue->head->next;
     if(queue->head == NULL){
         queue->tail = NULL;
@@ -175,15 +165,15 @@ int dequeue(pktqueue *queue, struct pkt *packet){
 struct receiver_info{
     int sockd; // socket where to perform the operation
     int numpkts; // total packets of the file to be received
-    int nextseqnum;
+    int *nextseqnum; // sequence number to use for next send
     int sem_readypkts; // semaphore to see if there are some packets ready to be read
     int sem_writebase; // semaphore to write base packet (and next contingous processed packets) on rcvbuf
     pthread_mutex_t mutex_rcvqueue; // mutex for access to received packets queue
-    pthread_mutex_t mutex_rcvbuf; // mutex for access to global rcvbuf and its associated free indexes stack (and in the same lock to local file_cells)
-    pktqueue received_pkts; // queue where are stored received packets
+    pthread_mutex_t mutex_rcvbuf;
+    pktqueue *received_pkts; // queue where are stored received packets
     int *file_cells; // list of cells from receive buffer where the file is stored in
     int init_transfer_seq; // sequence number of the first cargo packet
-    int rcvbase; // base number of the receive window (less recent packet to ack)
+    int *rcvbase; // base number of the receive window (less recent packet to ack)
     int last_packet_size; // size of last cargo in transfer, used for final write on file
     char *filename; // name of the file to receive
 };
@@ -211,6 +201,7 @@ struct pkt makepkt(int op, int seq, int ack, int pktleft, size_t size, void *dat
     packet.ack = ack;
     packet.pktleft = pktleft;
     packet.size = size;
+    memset(&packet.data, 0, DATASIZE);
     memcpy(&packet.data, data, size);
 
     return packet;
@@ -257,30 +248,6 @@ int calculate_numpkts(char *pathname){
     }
 
     return numpkts;
-}
-
-/*
- *  function: freespacebuf
- *  ----------------------------
- *  Check if there's enough space in the receiver buffer
- *
- *  return: quantity of rcvbuf cells are free
- *  error: -1
- */
- // TODO scan free indexes stack
- // -> int freespacebuf(struct  *free_indexes, int totpkt)
-int freespacebuf(index_stack buf_index){
-    size_t totpktsize;
-    char rcvbuf[DATASIZE];
-    int res;
-
-    //totpktsize = (size_t) (totpkt*sizeof(char))*(DATASIZE*sizeof(char));
-    //res = sizeof(rcvbuf)-totpktsize;
-    if(res >=0){
-        return 1;
-    }else{
-        return 0;
-    }
 }
 
 /*
@@ -366,7 +333,7 @@ ssize_t readn(int fd, void *buf, size_t n){
  *  vptr: buffer with bytes to write (write source)
  *  n: number of bytes to write
  *
- *  return: number of bytes actually written TODO ?
+ *  return: number of bytes actually written
  *  error: -1
  */
 ssize_t writen(int fd, const void *vptr, size_t n){
