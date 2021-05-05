@@ -641,7 +641,11 @@ printf("[Server pid:%d sockd:%d] Received synop [op:%d][seq:%d][ack:%d][pktleft:
         // Prepare op for child
         check_mem(memset(&opdata.cliaddr, 0, sizeof(struct sockaddr_in)), "main:memset:opdata.cliaddr");
         check_mem(memset(&opdata.clipacket, 0, sizeof(struct pkt)), "main:memset:opdata.clipacket");
+<<<<<<< HEAD
 printf("%s",opdata.clipacket.data);
+=======
+
+>>>>>>> 4c835913fabec8be0a2b71518a518f8a4c69d081
 
         //check_mem(memset(&opdata.clipacket.data, 0, DATASIZE), "main:memset:opdata.clipacket");
 
@@ -655,19 +659,19 @@ printf("Creating elab [addr:%d][port:%d][op:%d][seq:%d][ack:%d][pktleft:%d][size
             case SYNOP_LIST:
                 pthread_create(&tid, NULL, (void *)list, (void *)&opdata);
                 ++ongoing_operations;
-printf("Passed elab to child %d\n\n", tid);
+printf("Passed elab to child %d\n\n", (me)tid);
                 break;
 
             case SYNOP_GET:
                 pthread_create(&tid, NULL, (void *)get, (void *)&opdata);
                 ++ongoing_operations;
-printf("Passed elab to child %d\n\n", tid);
+printf("Passed elab to child %d\n\n", (me)tid);
                 break;
 
             case SYNOP_PUT:
                 //pthread_create(&tid, NULL, (void *)put, (void *)&opdata);
                 ++ongoing_operations;
-printf("Passed elab to child %d\n\n", tid);
+printf("Passed elab to child %d\n\n", (me)tid);
                 break;
 
             default:
