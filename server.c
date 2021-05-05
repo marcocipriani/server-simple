@@ -7,10 +7,12 @@ int connsd;
 struct sockaddr_in listen_addr;
 socklen_t len;
 struct sockaddr_in cliaddr; // TODEL cliaddr->getpeername(sockd)
+pthread_mutex_t mtxlist;
 char *msg;
 char rcvbuf[45000]; // buffer per la put
 void **tstatus;
 char *spath = SERVER_FOLDER; // root folder for server
+pthread_t *ttid;
 
 int freespacebuf2(int totpkt){
     size_t totpktsize;
@@ -27,6 +29,10 @@ int freespacebuf2(int totpkt){
 
 void handler(int signum){
 	printf("Server operation completed \n\n");
+    for(int i=0;i<WSIZE;i++){
+        pthread_cancel(ttid[i]);
+    }
+
 }
 
 
@@ -55,10 +61,9 @@ int check_validity(char **status, int *pktleft, int op, char *arg){
         case SYNOP_GET:
             //filename = check_mem(malloc(strlen(arg) * (sizeof(char))), "check_validity:malloc:filename");
             sprintf(localpathname, "%s%s", SERVER_FOLDER, arg);
-printf("\tcheck_validity op:%d arg:%s filename:%s\n", op, arg, localpathname);
             if ((*pktleft = calculate_numpkts(localpathname)) == -1){
                 *status = "File not available";
-printf("Invalid operation on this server\n");
+printf("check_validity: Invalid operation on this server\n");
                 return ACK_NEG;
             }
             *status = "File available";
@@ -68,7 +73,7 @@ printf("Invalid operation on this server\n");
             *status = "ok"; // TMP
             break;
     }
-printf("Valid operation on this server\n");
+printf("check_validity: Valid operation on this server\n");
     return ACK_POS;
 }
 
@@ -137,11 +142,10 @@ printf("Client operation continued\n");
 
 //input:puntatore a pila,sem(pkts_to_send),ack_counters,base,nextseqnum,initialseq(not required if pktlft->seq relative),sockd
 //timer, estimatedRTT..pid padre
-void *thread_sendpkt(void *arg){
+void thread_sendpkt(void *arg){
+    int me = (int)pthread_self();
     struct sender_info cargo;//t_info
     struct pkt sndpkt, rcvack;
-
-    int me;
     int k,n;
     int base;
     union sigval retransmit_info;
@@ -153,6 +157,7 @@ void *thread_sendpkt(void *arg){
     socklen_t len;
 
 transmit:
+    memset(&sndpkt,0,sizeof(struct pkt));
     oper.sem_num = 0;
     oper.sem_op = -1;
     oper.sem_flg = SEM_UNDO;
@@ -167,7 +172,10 @@ transmit:
     check(semop(SemSnd_Wndw,&oper,1),"THREAD: error wait global");    //wait su semGlob
 
     check(pthread_mutex_lock(&cargo.mutex_stack),"THREAD: error lock Stack");      //lock sulla struct stack_elem
-    sndpkt = pop_pkt(&cargo.stack);
+printf("ho preso il lock\n");
+    int res=pop_pkt(cargo.stack,&sndpkt);
+
+printf("ho fatto una pop %d \n",res);
 /*
     oper.sem_num = 0;                                                 //se pop_pkt a buon fine
     oper.sem_op = 1;                                                  //signal a semGlobal
@@ -176,11 +184,11 @@ transmit:
     check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global");
 */
     pthread_mutex_unlock(&cargo.mutex_stack);   //unlock struct stack_elem
-
+printf("ho rilasciato il lock\n");
     //sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in));
     check(send(cargo.sockid, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
 
-    pthread_mutex_trylock(&cargo.mutex_time);
+/*    pthread_mutex_trylock(&cargo.mutex_time);
     if (*(cargo.timer) == 0){       //avviso il padre di dormire per timeout_Interval
       //----->lock timer
       *(cargo.timer)=1;  //corretto scritto cosi?
@@ -191,7 +199,7 @@ transmit:
 
       check(semop(cargo.semTimer,&oper,1),"THREAD: error signal semTimer");
     }
-    check(pthread_mutex_unlock(&cargo.mutex_time),"THREAD: error unlock time");
+    check(pthread_mutex_unlock(&cargo.mutex_time),"THREAD: error unlock time");*/
 check_ack:
     n=recvfrom(opersd, &rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len);
 
@@ -227,10 +235,10 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initia
           }
             goto transmit;
       }
-      else if(rcvack.ack==base-1){    //ack duplicato
-          if ((cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) == 2) {
+      else if(rcvack.ack==(*cargo.base)-1){    //ack duplicato
+          if ((cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) == 3) { // 3 duplicated acks
   printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
-              (cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) = 0;//(cargo.p[(rcvack.ack) - (cargo.initialseq)]) + 1;
+              (cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) = 1;//(cargo.p[(rcvack.ack) - (cargo.initialseq)]) + 1;
   printf("azzero il counter[%d] : %d \n", (rcvack.ack) - (cargo.initialseq), cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]);
 
               check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
@@ -267,12 +275,12 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initia
  *  error: -
  */
 // OLD: int iseq, int numpkt, char *filename
-void *get(void *arg){ // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
+void get(void *arg){ // iseq=11,iack=31,numpkt=10,filename="pluto.jpg"
     int me = (int)pthread_self();
     struct pkt *sendpkt;
     int fd;
     int i, j, k, z;
-    pthread_t *ttid,tid;
+    pthread_t tid/*,*ttid*/;
     int *counter;
     int aux,oldBase;
     char *dati;
@@ -350,7 +358,7 @@ printf("server: errore malloc contatore ack \n");
 printf("aux %d \n", aux);
 printf("lunghezza dati: %lu\n", strlen((char *)dati));
 
-            sendpkt[j] = makepkt(5, iseq, 0, numpkt - j, aux, dati);
+            sendpkt[j] = makepkt(6, iseq, 0, numpkt - j, aux, dati);
 printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendpkt[j].pktleft, sendpkt[j].data);
             memset(dati, 0, DATASIZE);
             iseq++;
@@ -359,6 +367,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
             for (z=numpkt-1; z>=0;z--){
               push_pkt(&stackPtr, sendpkt[z]);
             }
+
             /*****INIZIALIZZAZIONE SEMAFORI E MUTEX**********/
             check(pthread_mutex_init(&mtxTime,NULL),"GET: errore pthread_mutex_init time");
 
@@ -374,7 +383,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
 
             //preparo il t_info da passare ai thread
 
-            t_info.stack = stackPtr;
+            t_info.stack = &stackPtr;
             t_info.semLoc = semPkt_to_send;
             t_info.semTimer = semTimer;
             t_info.mutex_time = mtxTime;
@@ -391,20 +400,20 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
             t_info.timeout_Interval = &timeout_Interval;
             t_info.father_pid = tid;
 
-			signal(SIGLASTACK,handler);
+			//TODO in sigaction
 
             for(j=0;j<WSIZE;j++){
-              if(pthread_create(&ttid[j], NULL, thread_sendpkt, (void *)&t_info) != 0){
+              if(pthread_create(&ttid[j], NULL, (void *)thread_sendpkt, (void *)&t_info) != 0){
 printf("server:ERRORE pthread_create GET in main");
                 exit(EXIT_FAILURE);
               }
             }
 
-
+            signal(SIGLASTACK,handler);
           //signal(SIGRETRANSMIT,push_base);//usa sigaction
           //signal(/*stop timer-base aggiornata*/);
           while((base-init)<=numpkt){
-            oper.sem_num = 0;
+            /*oper.sem_num = 0;
             oper.sem_op = -1;
             oper.sem_flg = SEM_UNDO;
 
@@ -428,13 +437,14 @@ printf("server:ERRORE pthread_create GET in main");
               check(semop(SemSnd_Wndw,&oper,1),"GET: error signal semGlobal ");
             }
             timer=0;
-            check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");
+            check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");*/
           }
           //return 1;
 
 }
+
 //OLD int iseq, void *pathname, int pktleft
-/*void *put(void *arg){
+/*void put(void *arg){
     int fd;
     size_t filesize;
     int npkt,edgepkt;
@@ -493,7 +503,7 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
 }*/
 
 /*
- *  function: makelist
+ *  function: createlist
  *  ----------------------------
  *  Print list on
  *
@@ -503,37 +513,87 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
  *  return: -
  *  error: -
  */
-void makelist(char **res, const char *path){
-    char command[DATASIZE];
-    FILE *file;
+ void createlist(char **res, const char *path) {
 
-    sprintf(command, "ls %s | cat > list.txt", path);
-    system(command);
+        int fdl;
+        int i;
+        int n_entry;
+        DIR *dirp = NULL;
+        struct dirent **filename;
 
-    file = fopen("list.txt", "r");
-    fread(*res, DATASIZE, 1, file);
-}
+        //PRENDO IL LOCK IL MUTEX
+        check(pthread_mutex_lock(&mtxlist),"Server:pthread_mutexlist_lock");
+
+          check_mem(dirp = opendir(path),"list nell'apertura della directory");
+
+          printf("CONTENUTO DELLA CARTELLA [%s] \n",path);
+          /*Crea un file che contiene la filelist*/
+
+          check(fdl = open("list.txt",O_CREAT | O_RDWR | O_TRUNC,0644),"server:open server_files.txt");
+
+          check(n_entry =scandir(path,&filename,NULL,alphasort) ,"server:scandir");
+
+          for(i = 0; i < n_entry; i++){
+              printf("%s \n",filename[i]->d_name);
+              dprintf(fdl,"%s\n",filename[i]->d_name);
+          }
+
+          closedir(dirp);
+          dirp = NULL;
+
+        //LASCIO IL MUTEX
+        check(pthread_mutex_unlock(&mtxlist),"server:pthread_mutex_lock");
+
+ }
 
 /*
  *  function: list
  *  ----------------------------
- *  Execute makelist function and send the result to the client
+ *  Execute createlist function and send the result to the client
  *
  *  return: -
  *  error: -
  */
-void *list(){
-    int me = (int)pthread_self();
+void list(void *arg) {
     char *res = malloc(((DATASIZE)-1)*sizeof(char)); // client has to put \0 at the end
     char **resptr = &res;
     struct pkt listpkt;
-    int opersd; // TMP returned from setop
-    int nextseqnum = 0; // TMP
+    struct pkt rcvack;
+    struct elab synop = *((struct elab*)arg);
+    struct pkt synack;
+    int fdl;
+    int aux;
+    char dati[DATASIZE];
+    int n;
+    int opersd;
 
-    makelist(resptr, spath);
-    listpkt = makepkt(CARGO, nextseqnum, 1, 1, strlen(res), res);
+
+    opersd = serve_op(&synack, synop);
+    if(opersd < 0){
+printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipacket.seq);
+        pthread_exit(NULL);
+    }
+
+    createlist(resptr, spath);
+    check(fdl = open("list.txt",O_RDONLY,0644),"server:open server_files.txt");
+
+    aux = read(fdl, dati, DATASIZE);
+
+    listpkt = makepkt(CARGO, synack.ack + 1, 0, 0, aux, dati);
+
 printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
-    check(sendto(opersd, &listpkt, DATASIZE, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in)), "main:sendto");
+    check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
+printf("[Server] Waiting for ack...\n");
+    n = recv(opersd, &rcvack, MAXTRANSUNIT, 0); // TMP cliaddr parsed from sender_info
+    if(n<1){
+printf("No ack response from client\n");
+        close(opersd);
+    }
+    if(rcvack.ack == listpkt.seq){
+printf("It's ok, i received ack about listpkt \n");
+    }else{
+printf("there are problems, not response ack from client \n");
+    }
 }
 
 int main(int argc, char const *argv[]){
@@ -544,9 +604,6 @@ int main(int argc, char const *argv[]){
     pthread_t tid;
     int ongoing_operations;
     char *spath = DEFAULT_PATH; // root folder for server
-
-    char *filename, *localpathname; // TMP?
-    struct sembuf oper; // TMP?
 
     /*** Usage ***/
     if (argc > 2) {
@@ -566,7 +623,7 @@ printf("Root folder: %s\n", spath);
     len = sizeof(struct sockaddr_in);
     ongoing_operations = 0;
 
-    SemSnd_Wndw=check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"MAIN: semget global");
+    SemSnd_Wndw = check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"MAIN: semget global");
     check(semctl(SemSnd_Wndw,0,SETVAL,WSIZE), "MAIN: semctl global");
 
    /*** Receiving synop (max BACKLOG) ***/
@@ -585,28 +642,30 @@ printf("[Server pid:%d sockd:%d] Received synop [op:%d][seq:%d][ack:%d][pktleft:
         check_mem(memset(&opdata.cliaddr, 0, sizeof(struct sockaddr_in)), "main:memset:opdata.cliaddr");
         check_mem(memset(&opdata.clipacket, 0, sizeof(struct pkt)), "main:memset:opdata.clipacket");
 printf("%s",opdata.clipacket.data);
+
+        //check_mem(memset(&opdata.clipacket.data, 0, DATASIZE), "main:memset:opdata.clipacket");
+
         memcpy(&opdata.cliaddr, &cliaddr, len);
-        check_mem(memset(&opdata.clipacket.data, 0, DATASIZE), "main:memset:opdata.clipacket");
-        opdata.clipacket = makepkt(synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
+        opdata.clipacket = makepkt(synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, synop.data);
 printf("Creating elab [addr:%d][port:%d][op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", opdata.cliaddr.sin_addr.s_addr, opdata.cliaddr.sin_port, opdata.clipacket.op, opdata.clipacket.seq, opdata.clipacket.ack, opdata.clipacket.pktleft, opdata.clipacket.size, opdata.clipacket.data);
 
         /*** Operation selection ***/
         switch (opdata.clipacket.op) {
 
             case SYNOP_LIST:
-                pthread_create(&tid, NULL, list, (void *)&opdata);
+                pthread_create(&tid, NULL, (void *)list, (void *)&opdata);
                 ++ongoing_operations;
 printf("Passed elab to child %d\n\n", tid);
                 break;
 
             case SYNOP_GET:
-                pthread_create(&tid, NULL, get, (void *)&opdata);
+                pthread_create(&tid, NULL, (void *)get, (void *)&opdata);
                 ++ongoing_operations;
 printf("Passed elab to child %d\n\n", tid);
                 break;
 
             case SYNOP_PUT:
-                //pthread_create(&tid, NULL, put, (void *)&opdata);
+                //pthread_create(&tid, NULL, (void *)put, (void *)&opdata);
                 ++ongoing_operations;
 printf("Passed elab to child %d\n\n", tid);
                 break;

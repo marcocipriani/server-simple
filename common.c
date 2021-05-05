@@ -57,32 +57,27 @@ struct stack_elem{
 };
 typedef struct stack_elem *pktstack;
 
-void push_pkt(pktstack *topPtr, struct pkt data){
-    pktstack newPtr;     //puntatore al nuovo nodo
+int push_pkt(pktstack *s, struct pkt p){
+    pktstack new = malloc(sizeof(struct stack_elem));
+    if(new == NULL) return -1;
+    new->packet = p;
+    new->next = *s;
+    *s = new;
+    return 0;
 
-    newPtr = malloc(sizeof(struct stack_elem));
-    if (newPtr != NULL){
-        newPtr->packet = data;
-        newPtr->next = *topPtr;
-        *topPtr = newPtr;
-    }else{// no space available
-printf("pacchetto %d non inserito nella pila\n",data.seq);
-    }
 }
-struct pkt pop_pkt(pktstack *topPtr){
-    pktstack tempPtr; //puntatore temporaneo al nodo
-    struct pkt popValue; //pacchetto rimosso
+int pop_pkt(pktstack *s, struct pkt *res){
+    if(*s == NULL) return -1;
+    *res = (*s)->packet;
+    pktstack tmp = *s;
+    *s = (*s)->next;
+    free(tmp);
+    return 0;
 
-    tempPtr = *topPtr;
-    popValue = (*topPtr)->packet;
-    *topPtr = (*topPtr)->next;
-    free(tempPtr);
-
-    return popValue;
 }
 
 struct sender_info{
-    pktstack stack; //puntatore a struct stack_elem
+    pktstack *stack; //puntatore a struct stack_elem
     int semLoc;              //descrittore semaforo local
     int semTimer;
     pthread_mutex_t mutex_time;
@@ -146,9 +141,15 @@ int enqueue(pktqueue *queue, struct pkt packet){
     struct queue_elem *new_packet;
 
     new_packet = (struct queue_elem *)malloc(sizeof(struct queue_elem));//????
-    if(new_packet == NULL) return -1; // no fatal exit
+    if(new_packet == NULL){
+     printf("coda non riuscita \n");
+     return -1; // no fatal exit
+     }
     new_packet->packet = packet;
     new_packet->next = NULL;
+
+printf("informazioni pacchetto nella coda: seq %d, ack %d, size %d data %s \n",new_packet->packet.seq,new_packet->packet.ack, new_packet->packet.size, new_packet->packet.data);
+
 
     if(queue->tail != NULL){
         queue->tail->next = new_packet;
@@ -162,8 +163,12 @@ int enqueue(pktqueue *queue, struct pkt packet){
     return 0;
 }
 int dequeue(pktqueue *queue, struct pkt *packet){
-    if(queue->head == NULL) return -1;
+    if(queue->head == NULL){
+     printf("la head della cosa risulta vuota \n");
+     return -1;
+     }
 
+	printf("DEQUEUE queue->head.packetseq %d \n",queue->head->packet.seq);
     struct queue_elem *tmp = queue->head;
 
     *packet = tmp->packet;
@@ -184,10 +189,12 @@ struct receiver_info{
     int sem_readypkts; // semaphore to see if there are some packets ready to be read
     pthread_mutex_t mutex_rcvqueue; // mutex for access to received packets queue
     pthread_mutex_t mutex_rcvbuf;
-    pktqueue received_pkts; // queue where are stored received packets
+    pktqueue *received_pkts; // queue where are stored received packets
     int *file_cells; // list of cells from receive buffer where the file is stored in
     int init_transfer_seq; // sequence number of the first cargo packet
     int rcvbase; // base number of the receive window (less recent packet to ack)
+    int last_packet_size; // size of last cargo in transfer, used for final write on file
+    char *filename; // name of the file to receive
 };
 
 /*
