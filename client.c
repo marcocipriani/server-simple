@@ -227,7 +227,17 @@ printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d
 
 }
 
-void father(void *arg){
+/*
+ *  function: get
+ *  ----------------------------
+ *  Download a file from the server
+ *
+ *  arg: filename to download
+ *
+ *  return: -
+ *  error: -
+ */
+void get(void *arg){
     int me = (int)pthread_self();
     struct pkt synack, cargo;
     char *filename = (char *)arg; // TODO not necessary
@@ -301,100 +311,6 @@ printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:
     check(semop(t_info.sem_readypkts, &signal_readypkts, 1), "get:semop:signal:sem_readypkts");
 
     goto receive; // TODO goto->while
-}
-
-/*
- *  function: get
- *  ----------------------------
- *  Download a file from the server
- *
- *  arg: filename to download
- *
- *  return: -
- *  error: -
- */
- // OLD int get(int sockd, void *pathname, int pktleft)
-void get(void *arg){
-    int me = (int)pthread_self();
-    int fd;
-    size_t filesize;
-    int numpkts,edgepkt;
-    int pos,lastpktsize,rcv_base,rltv_base;
-    char *localpathname;
-    struct pkt cargo, ack;
-    char *filename = (char *)arg;
-    int sockd;
-    struct pkt synack;
-    struct receiver_info;
-    struct sockaddr_in child_servaddr;
-
-    sockd = request_op(&synack, SYNOP_GET, 0, filename);
-    if(sockd < 1){
-printf("request_op:operation unsuccessful\n");
-        pthread_exit(NULL);
-    }
-
-    // parse variables to set receiver_info
-    //check(getpeername(sockd, (struct sockaddr *)&child_servaddr, &len), "get:getpeername:child_servaddr");
-
-    localpathname = malloc(DATASIZE * sizeof(char));
-    sprintf(localpathname, "%s%s", CLIENT_FOLDER, filename);
-printf("local %s\n",localpathname);
-
-    numpkts = synack.pktleft;
-    edgepkt=numpkts; /*#pkt totali del file da ricevere SOLUZIONE: do + while!!!*/
-    initseqserver = synack.ack + 1;
-    rcv_base=initseqserver; //per ora initseqserver è globale
-    rltv_base=1;
-
-receiver:
-    while(numpkts>0){
-        check(recvfrom(sockd,&cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len), "GET-client:recvfrom Cargo");
-printf("pacchetto ricevuto: seq %d, ack %d, pktleft %d, size %d, data %s \n", cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
-        pos=(cargo.seq - initseqserver);
-printf("cargo->seq: %d \n",cargo.seq);
-printf("initseqserver: %d \n",initseqserver);
-printf("pos: %d \n",pos);
-
-        if(pos>edgepkt && pos<0){   //PKT FUORI INTERVALLO
-printf("numero sequenza pacchetto ricevuto fuori range \n");
-            //return 0;
-        }
-
-        else if((rcvbuf[pos*(DATASIZE)])==0){ // PKT NELL'INTERVALLO CORRETTO E NON ANCORA RICEVUTO
-//printf("VALORE PACCHETTO %d \n",(initseqserver+edgepkt-1));
-            if(cargo.seq == (initseqserver+edgepkt-1)){
-                lastpktsize = cargo.size;
-            }
-            memcpy(&rcvbuf[pos*(DATASIZE)],cargo.data,DATASIZE);
-
-            if(cargo.seq == rcv_base){
-                ack = makepkt(ACK_POS, 0, cargo.seq, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
-                rcv_base++;
-            }
-            else{   //teoricamente se cargo.seq>rcv_base
-                ack = makepkt(ACK_POS, 0, rcv_base - 1, numpkts - (rcv_base - initseqserver), strlen(CARGO_OK), CARGO_OK);
-            }
-
-            if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "get:send:new-cargo-ack");
-printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
-        }
-        else{           //PKT NELL'INTERVALLO CORRETTO MA GIA' RICEVUTO
-printf("pacchetto già ricevuto, posso scartarlo \n");
-            ack = makepkt(ACK_POS, 0, rcv_base - 1, numpkts - (rcv_base - initseqserver), strlen(CARGO_OK), CARGO_OK);
-            if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "get:send:duplicated-cargo-ack");
-            goto receiver; // il pacchetto viene scartato
-        }
-        numpkts--;
-    }
-
-    filesize = (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize; //dimensione effettiva del file
-    fd = open(localpathname,O_RDWR|O_TRUNC|O_CREAT,0666);
-    writen(fd,rcvbuf,filesize);
-printf("Thread %d: il file %s e' stato correttamente scaricato\n", me, filename);
-    memset(rcvbuf, 0, (size_t)((DATASIZE)*(edgepkt-1))+lastpktsize );
-    //return 1;
-
 }
 
 /*
@@ -498,8 +414,7 @@ void list(void *arg){
  *
  *  return: -
  *  error: -
-
- // OLD int get(int sockd, int iseq, int numpkts, char *filename)
+ */
 void put(void *arg){
     int i, j, k, z;
     pthread_t *tid;
@@ -586,7 +501,7 @@ printf("[Client]: errore nell'invio/ricezione del pkt/ack: %d \n", i);
 
         //return 1;
 }
- */
+
 
 int main(int argc, char const *argv[]){
     pid_t me;
@@ -642,7 +557,7 @@ quickstart:
                 printf("Type filename to get and press ENTER: ");
                 fscanf(stdin, "%s", arg);
                 fflush_stdin();
-                pthread_create(&tid, NULL, (void *)father, (void *)arg);
+                pthread_create(&tid, NULL, (void *)get, (void *)arg);
                 pthread_join(tid, NULL); // TMP single-thread app
                 break;
 
