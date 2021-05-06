@@ -41,7 +41,7 @@ struct elab{
 // RTT
 struct sample{
     struct timespec *start;
-    int seq;
+    int *seq;
 };
 
 struct stack_elem{
@@ -85,10 +85,11 @@ struct sender_info{
     int numpkt;
     int sockid;             //socket a cui spedire pkt
     int *timer;
-    double *estimatedRTT;
-    struct sample *startRTT;
+    int *devRTT;
+    int *estimatedRTT;
+    struct sample startRTT;
     //struct timespec *endRTT;
-    double *timeout_Interval;
+    int *timeout_Interval;
     pthread_t father_pid;       //pid del padre
 };
 

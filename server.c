@@ -135,6 +135,7 @@ void thread_sendpkt(void *arg){
     union sigval retransmit_info;
     struct sembuf oper;
     cargo = *((struct sender_info *)arg);
+    struct timespec end;
 
     int opersd=cargo.sockid;
     socklen_t len;
@@ -172,6 +173,11 @@ printf("ho rilasciato il lock\n");
     check(send(cargo.sockid, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
 printf("[Server tid:%d sockd:%d] Sended packet [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n", me, opersd, sndpkt.op, sndpkt.seq, sndpkt.ack, sndpkt.pktleft, sndpkt.size);
 
+    if(*(cargo.startRTT.seq)==-1){
+        clock_gettime( CLOCK_REALTIME,cargo.startRTT.start);
+printf("cargo.startRTT->start; %d  %lf per pkt; %d\n",(int)cargo.startRTT.start->tv_sec,(float)(1e-9)*cargo.startRTT.start->tv_nsec,sndpkt.seq-cargo.initialseq);
+        *(cargo.startRTT.seq)=sndpkt.seq;
+    }
 /*    pthread_mutex_trylock(&cargo.mutex_time);
     if (*(cargo.timer) == 0){       //avviso il padre di dormire per timeout_Interval
       //----->lock timer
@@ -193,6 +199,21 @@ printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ac
 printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initialseq), cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]);
 
     if(n>0){
+      if(*(cargo.startRTT.seq)==rcvack.ack){
+        *(cargo.startRTT.seq)=-1;
+        clock_gettime( CLOCK_REALTIME,&end);
+printf("end %d  %lf per pkt:%d\n",(int)end.tv_sec,(float)(1e-9)*end.tv_nsec,rcvack.ack-cargo.initialseq);
+        int sampleRTT = ((end.tv_sec - cargo.startRTT.start->tv_sec) + (1e-9)*(end.tv_nsec - cargo.startRTT.start->tv_nsec))*(1e6);
+printf("SampleRTT: %d ns\n",sampleRTT);
+        *(cargo.estimatedRTT)=(0.875*(*cargo.estimatedRTT))+(0.125*sampleRTT);
+printf("new estimatedRTT: %d ns\n",*(cargo.estimatedRTT));
+        *(cargo.devRTT)=(0.75*(*cargo.devRTT))+(0.25*(abs(sampleRTT-(*cargo.estimatedRTT))));
+printf("new devRTT: %d ns\n",*(cargo.devRTT));
+        *(cargo.timeout_Interval)=*(cargo.estimatedRTT)+4*(*cargo.devRTT);
+printf("new timeout_Interval: %d ns\n",*(cargo.timeout_Interval));
+    }
+
+
       if(rcvack.ack-(*(cargo.base))>WSIZE || rcvack.ack<(*(cargo.base)-1)){    //ack fuori finestra
         check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
         goto check_ack;
@@ -278,7 +299,8 @@ void get(void *arg){
     struct sembuf oper;
     struct timespec start;
     int timer;
-    double estimatedRTT, timeout_Interval;
+    int rtt= -1;
+    int estimatedRTT, timeout_Interval,devRTT;
     struct sample startRTT;
 
     opersd = serve_op(&synack, synop);
@@ -293,8 +315,9 @@ printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipac
     int init = synack.ack + 1;
 
     startRTT.start=&start;
-    startRTT.seq=-1;
-
+    startRTT.seq=&rtt;
+    estimatedRTT=2000;
+    devRTT=500;
     //filename=(char *)malloc((synop.clipacket.size+1)*(sizeof(char)));
     //strncpy(filename,synop.clipacket.data,(size_t)synop.clipacket.size);
     localpathname = (char *)malloc((DATASIZE) * sizeof(char));
@@ -375,8 +398,9 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
     t_info.numpkt = numpkt;
     t_info.sockid = opersd;
     t_info.timer = &timer;
+    t_info.devRTT = &devRTT;
     t_info.estimatedRTT = &estimatedRTT;
-    t_info.startRTT = &startRTT;
+    t_info.startRTT = startRTT;
     t_info.timeout_Interval = &timeout_Interval;
     t_info.father_pid = tid;
 
@@ -497,7 +521,7 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
  *  return: -
  *  error: -
  */
- void createlist(char **res, const char *path) {
+ void createlist(const char *path) {
 
         int fdl;
         int i;
@@ -518,8 +542,13 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
           check(n_entry =scandir(path,&filename,NULL,alphasort) ,"server:scandir");
 
           for(i = 0; i < n_entry; i++){
-              printf("%s \n",filename[i]->d_name);
-              dprintf(fdl,"%s\n",filename[i]->d_name);
+
+            if (strcmp(filename[i]->d_name, ".")>0){
+                if(strcmp(filename[i]->d_name, "..")>0){
+                    printf("%s \n",filename[i]->d_name);
+                    dprintf(fdl,"%s\n",filename[i]->d_name);
+                }
+            }
           }
 
           closedir(dirp);
@@ -539,8 +568,6 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
  *  error: -
  */
 void list(void *arg) {
-    char *res = malloc(((DATASIZE)-1)*sizeof(char)); // client has to put \0 at the end
-    char **resptr = &res;
     struct pkt listpkt;
     struct pkt rcvack;
     struct elab synop = *((struct elab*)arg);
@@ -557,7 +584,7 @@ printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipac
         pthread_exit(NULL);
     }
 
-    createlist(resptr, spath);
+    createlist(synop.clipacket.data);
     check(fdl = open("list.txt",O_RDONLY,0644),"server:open server_files.txt");
 
     aux = read(fdl, filedata, DATASIZE);
