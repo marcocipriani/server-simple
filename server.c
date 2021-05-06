@@ -274,7 +274,7 @@ void get(void *arg){
     struct elab synop = *((struct elab*)arg);
     struct pkt synack;
     int opersd;
-    char *filename, *localpathname;
+    char filename[128], *localpathname;
     struct sembuf oper;
     struct timespec start;
     int timer;
@@ -295,18 +295,28 @@ printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipac
     startRTT.start=&start;
     startRTT.seq=-1;
 
-    filename=(char *)malloc(synop.clipacket.size*(sizeof(char)));
-    strncpy(filename,synop.clipacket.data,synop.clipacket.size);
+    //filename=(char *)malloc((synop.clipacket.size+1)*(sizeof(char)));
+    //strncpy(filename,synop.clipacket.data,(size_t)synop.clipacket.size);
     localpathname = (char *)malloc((DATASIZE) * sizeof(char));
-    sprintf(localpathname, "%s%s", SERVER_FOLDER, filename);
-
+    sprintf(localpathname, "%s%s", SERVER_FOLDER, synop.clipacket.data);
+   char cwd[DATASIZE];
+   if (getcwd(cwd, sizeof(cwd)) != NULL) {
+       printf("Current working dir: %s\n", cwd);
+   } else {
+       perror("getcwd() error");
+   }
     tid = pthread_self();
     pktstack stackPtr = NULL;
     timeout_Interval=TIMEINTERVAL;
-
-    fd = check(open(localpathname, O_RDONLY, 00700), "get:open:fd");
-    free(filename);
-    free(localpathname);
+printf("clipacket: %s e size; %d\n",synop.clipacket.data,synop.clipacket.size);
+printf("filename: %s\n",filename);
+printf("localpathname: %s\n",localpathname);
+    fd = check(open(localpathname, O_RDWR, 0666), "get:open:fd");
+printf("filename: %s\n",filename);
+printf("localpathname: %s\n",localpathname);
+    //check_mem(malloc(filename,0,128)
+    //free(filename);
+    //free(localpathname);
 
 
 printf("Thread %d: inizio trasferimento \n", me);
@@ -335,6 +345,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
         memset(filedata, 0, DATASIZE);
         iseq++;
     }
+    close(fd);
 
     for (z=numpkt-1; z>=0;z--){
         push_pkt(&stackPtr, sendpkt[z]);
@@ -376,7 +387,7 @@ printf("server:ERRORE pthread_create GET in main");
         }
     }
 
-	close(fd);
+	//close(fd);
     memset(&act_lastack, 0, sizeof(struct sigaction));
     act_lastack.sa_handler = &kill_handler;
     sigemptyset(&act_lastack.sa_mask);
