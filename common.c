@@ -38,13 +38,6 @@ struct elab{
     struct pkt clipacket;
 };
 
-// TODEL after thread_sendpkt changes to thread_info
-struct elab2{
-    int initialseq;   //numero sequenza iniziale per un dato file
-    int *p;          //puntatore a array di contatori (ricezione ack)
-    struct pkt thpkt;
-};
-
 // RTT
 struct sample{
     struct timespec *start;
@@ -56,45 +49,33 @@ struct stack_elem{
     struct stack_elem *next;
 };
 typedef struct stack_elem *pktstack;
+int push_pkt(pktstack *s, struct pkt p){
+    pktstack new = malloc(sizeof(struct stack_elem));
+    if(new == NULL) return -1;
 
-void push_pkt(pktstack *topPtr, struct pkt data){
-    pktstack newPtr;     //puntatore al nuovo nodo
+    new->packet = p;
+    new->next = *s;
+    *s = new;
 
-    newPtr = malloc(sizeof(struct stack_elem));
-    if (newPtr != NULL){
-        newPtr->packet = data;
-        newPtr->next = *topPtr;
-        *topPtr = newPtr;
-    }else{// no space available
-printf("pacchetto %d non inserito nella pila\n",data.seq);
-    }
+    return 0;
+
 }
+int pop_pkt(pktstack *s, struct pkt *res){
+    if(*s == NULL) return -1;
 
-struct pkt pop_pkt(pktstack *topPtr){
-    pktstack tempPtr; //puntatore temporaneo al nodo
-    struct pkt popValue; //pacchetto rimosso
+    *res = (*s)->packet;
+    pktstack tmp = *s;
+    *s = (*s)->next;
 
-    tempPtr = *topPtr;
-    popValue = (*topPtr)->packet;
-    *topPtr = (*topPtr)->next;
-    free(tempPtr);
-
-    return popValue;
+    free(tmp);
+    return 0;
 }
-
-struct index{
-    int value;
-    struct index *next;
-};
-typedef struct index *index_stack;
-
-// TODO push_index
-// TODO pop_index
 
 struct sender_info{
-    pktstack stack; //puntatore a struct stack_elem
+    pktstack *stack; //puntatore a struct stack_elem
     int semLoc;              //descrittore semaforo local
     int semTimer;
+    pthread_mutex_t mutex_time;
     pthread_mutex_t mutex_stack;
     pthread_mutex_t mutex_ack_counter;
     //pthread_mutex_t mutex_rtt;
@@ -108,11 +89,97 @@ struct sender_info{
     struct sample *startRTT;
     //struct timespec *endRTT;
     double *timeout_Interval;
-    pid_t father_pid;       //pid del padre
+    pthread_t father_pid;       //pid del padre
 };
 
+struct index{
+    int value;
+    struct index *next;
+};
+typedef struct index *index_stack;
+int push_index(index_stack *stack, int new_index){
+    index_stack new = malloc(sizeof(struct index));
+    if(new == NULL) return -1; // no fatal exit
+
+    new->value = new_index;
+    new->next = *stack;
+    *stack = new;
+
+    return 0;
+}
+int pop_index(index_stack *stack){
+    if(*stack == NULL) return -1;
+
+    int res = (*stack)->value;
+    struct index *tmp = *stack;
+    *stack = (*stack)->next;
+
+    free(tmp);
+    return res;
+}
+void init_index_stack(index_stack *stack, int n){
+    for(int i=n-1;i>=0;i--){
+        push_index(stack, i);
+    }
+};
+
+struct queue_elem{
+    struct pkt packet;
+    struct queue_elem *next;
+};
+typedef struct{
+    struct queue_elem *head;
+    struct queue_elem *tail;
+} pktqueue;
+void init_queue(pktqueue *queue){
+    queue->head = NULL;
+    queue->tail = NULL;
+}
+int enqueue(pktqueue *queue, struct pkt packet){
+    struct queue_elem *new_packet = malloc(sizeof(struct queue_elem));
+    if(new_packet == NULL){ return -1; }
+
+    new_packet->packet = packet;
+    new_packet->next = NULL;
+
+    if(queue->tail != NULL){
+        queue->tail->next = new_packet;
+    }
+    queue->tail = new_packet;
+    if(queue->head == NULL){
+        queue->head = new_packet;
+    }
+
+    return 0;
+}
+int dequeue(pktqueue *queue, struct pkt *packet){
+    if(queue->head == NULL){ return -1; }
+    struct queue_elem *tmp = queue->head;
+
+    *packet = tmp->packet;
+    queue->head = queue->head->next;
+    if(queue->head == NULL){
+        queue->tail = NULL;
+    }
+
+    //free(tmp);
+    return 0;
+}
+
 struct receiver_info{
+    int sockd; // socket where to perform the operation
     int numpkts; // total packets of the file to be received
+    int *nextseqnum; // sequence number to use for next send
+    int sem_readypkts; // semaphore to see if there are some packets ready to be read
+    int sem_writebase; // semaphore to write base packet (and next contingous processed packets) on rcvbuf
+    pthread_mutex_t mutex_rcvqueue; // mutex for access to received packets queue
+    pthread_mutex_t mutex_rcvbuf;
+    pktqueue *received_pkts; // queue where are stored received packets
+    int *file_cells; // list of cells from receive buffer where the file is stored in
+    int init_transfer_seq; // sequence number of the first cargo packet
+    int *rcvbase; // base number of the receive window (less recent packet to ack)
+    int *last_packet_size; // size of last cargo in transfer, used for final write on file
+    char *filename; // name of the file to receive
 };
 
 /*
@@ -138,6 +205,7 @@ struct pkt makepkt(int op, int seq, int ack, int pktleft, size_t size, void *dat
     packet.ack = ack;
     packet.pktleft = pktleft;
     packet.size = size;
+    memset(&packet.data, 0, DATASIZE);
     memcpy(&packet.data, data, size);
 
     return packet;
@@ -184,30 +252,6 @@ int calculate_numpkts(char *pathname){
     }
 
     return numpkts;
-}
-
-/*
- *  function: freespacebuf
- *  ----------------------------
- *  Check if there's enough space in the receiver buffer
- *
- *  return: quantity of rcvbuf cells are free
- *  error: -1
- */
- // TODO scan free indexes stack
- // -> int freespacebuf(struct  *free_indexes, int totpkt)
-int freespacebuf(index_stack buf_index){
-    size_t totpktsize;
-    char rcvbuf[DATASIZE];
-    int res;
-
-    //totpktsize = (size_t) (totpkt*sizeof(char))*(DATASIZE*sizeof(char));
-    //res = sizeof(rcvbuf)-totpktsize;
-    if(res >=0){
-        return 1;
-    }else{
-        return 0;
-    }
 }
 
 /*
@@ -260,7 +304,7 @@ void *check_mem(void *mem, const char *msg){
  *  return: number of bytes actually read
  *  error: -1
  */
-ssize_t readn(int fd, void *buf, size_t n) {
+ssize_t readn(int fd, void *buf, size_t n){
     size_t nleft;
     ssize_t nread;
     char *ptr;
@@ -293,7 +337,7 @@ ssize_t readn(int fd, void *buf, size_t n) {
  *  vptr: buffer with bytes to write (write source)
  *  n: number of bytes to write
  *
- *  return: number of bytes actually written TODO ?
+ *  return: number of bytes actually written
  *  error: -1
  */
 ssize_t writen(int fd, const void *vptr, size_t n){
@@ -319,29 +363,19 @@ ssize_t writen(int fd, const void *vptr, size_t n){
 /*
  *  function: setsock
  *  ----------------------------
- *  Create a socket with defined address (even for server purpose) and timeout
+ *  Create a socket with defined address and timeout
  *
  *  addr: address of contacting end point
  *  seconds: time for timeout
- *  is_server: flag for bind()
  *
  *  return: descriptor of a new socket
  *  error: -1
  */
-int setsock(struct sockaddr_in addr, int seconds, int is_server){
+int setsock(struct sockaddr_in addr, int seconds){
     int sockd = -1;
     struct timeval tout;
 
     sockd = check(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), "setsock:socket");
-
-    // check_mem(memset((void *)&addr, 0, sizeof(addr)), "setsock:memset");
-    // addr->sin_family = AF_INET;
-    // addr->sin_port = htons(port);
-    // addr->sin_addr.s_addr = htonl(INADDR_ANY);
-    // check(inet_pton(AF_INET, address, &addr->sin_addr), "setsock:inet_pton");
-    if(!is_server){
-        check(bind(sockd, (struct sockaddr *)&addr, sizeof(struct sockaddr)), "setsock:bind");
-    }
 
     tout.tv_sec = seconds;
     tout.tv_usec = 0;
@@ -359,7 +393,26 @@ printf("Created new socket id:%d family:%d port:%d addr:%d\n", sockd, addr.sin_f
  *  return: -
  *  error: -
  */
-void fflush_stdin() {
+void fflush_stdin(){
 	char c;
 	while( (c=getchar())!=EOF && c!='\n');
+}
+
+/*
+ *  function: simulate_loss
+ *  ----------------------------
+ *  Toss a coin to perform an operation, simulating a packet loss in sender
+ *
+ *  usage: if(simulate_loss()) send(...)
+ *
+ *  return: 1 (head) if operation will be performed, 0 (tail) if not
+ *  error: -
+ */
+int simulate_loss(){
+    int i = (rand()%2);
+    if(i==0){
+printf("simulate_loss: Next send will be lost%d\n");
+        return 0;
+    }
+    return 1;
 }
