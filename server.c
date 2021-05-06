@@ -518,8 +518,13 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
           check(n_entry =scandir(path,&filename,NULL,alphasort) ,"server:scandir");
 
           for(i = 0; i < n_entry; i++){
-              printf("%s \n",filename[i]->d_name);
-              dprintf(fdl,"%s\n",filename[i]->d_name);
+
+            if (strcmp(filename[i]->d_name, ".")>0){  
+                if(strcmp(filename[i]->d_name, "..")>0){
+                    printf("%s \n",filename[i]->d_name);
+                    dprintf(fdl,"%s\n",filename[i]->d_name);
+                }
+            }
           }
 
           closedir(dirp);
