@@ -305,6 +305,9 @@ printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipac
     timeout_Interval=TIMEINTERVAL;
 
     fd = check(open(localpathname, O_RDONLY, 00700), "get:open:fd");
+    free(filename);
+    free(localpathname);
+
 
 printf("Thread %d: inizio trasferimento \n", me);
     sendpkt = malloc((numpkt) * sizeof(struct pkt)); /*Alloca la memoria per thread che eseguiranno la get */
@@ -373,6 +376,7 @@ printf("server:ERRORE pthread_create GET in main");
         }
     }
 
+	close(fd);
     memset(&act_lastack, 0, sizeof(struct sigaction));
     act_lastack.sa_handler = &kill_handler;
     sigemptyset(&act_lastack.sa_mask);

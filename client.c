@@ -108,7 +108,7 @@ void writer(void *arg){
     int free_index;
 
     sprintf(localpathname, "%s%s", CLIENT_FOLDER, info.filename);
-printf("Thread writer %d starts writing on localpathname:%s\n", me, localpathname);
+printf("\nThread writer %d starts writing on localpathname:%s\n", me, localpathname);
     fd = open(localpathname, O_RDWR|O_CREAT|O_TRUNC, 0666);
 
     while(last_write_made < info.numpkts){
@@ -119,20 +119,22 @@ printf("Thread writer %d starts writing on localpathname:%s\n", me, localpathnam
 
         pthread_mutex_lock(&info.mutex_rcvbuf);
 
+
         while(info.file_cells[last_write_made] != -1){
             free_index = info.file_cells[last_write_made];
 printf("\n IL WRITER HA SCELTO INDEX: %d \n",free_index);
 
             if(last_write_made == info.numpkts-1)
-                n_bytes_to_write = *info.last_packet_size;
-printf("\n IL WRITER SCRIVER PER LUNGHEZZA %d \n",n_bytes_to_write);
+                n_bytes_to_write = (*info.last_packet_size);
+printf("\n IL WRITER SCRIVE PER LUNGHEZZA %d \n",n_bytes_to_write);
 
 printf("\n IL WRITER STA SCRIVENDO IL CARATTERE start: %c e la end: %c \n",rcvbuf[free_index*(DATASIZE)],rcvbuf[free_index*(DATASIZE)+n_bytes_to_write-1]);
-            writen(fd, &rcvbuf[free_index], n_bytes_to_write);
-            check_mem(memset(&rcvbuf[free_index], 0, DATASIZE), "receiver:memset:rcvbuf[free_index]");
+            writen(fd, &rcvbuf[free_index*(DATASIZE)], n_bytes_to_write);
+            check_mem(memset(&rcvbuf[free_index*(DATASIZE)], 0, DATASIZE), "receiver:memset:rcvbuf[free_index]");
 
 printf("\n DOPO LA SCRITTURA NEL BUFF CI STA start: %c e la end: %c \n", rcvbuf[free_index*(DATASIZE)],rcvbuf[free_index*(DATASIZE)+n_bytes_to_write-1]);
             check(push_index(&free_pages_rcvbuf, free_index), "receiver:push_index");
+            info.file_cells[last_write_made]=-1;
             last_write_made = last_write_made +1;
             if(last_write_made == info.numpkts) break;
         }
@@ -179,8 +181,6 @@ printf("Client %d has dequeue packet %d\n", me, cargo.seq-info.init_transfer_seq
 printf("Client %d has decided to store packet %d in rcvbuf[%d]\n", me, cargo.seq-info.init_transfer_seq, i);
         check_mem(memcpy(&rcvbuf[i*(DATASIZE)], &cargo.data, cargo.size), "receiver:memcpy:cargo");
 
-printf("\n LA POSIZIONE NEL BUFFER: %d e la lunghezza dei dati scritta: %d \n",i*(DATASIZE),cargo.size);
-printf("\n NEL BUFFER HO SCRITTO buf[%d]:%c buf[%d]:%c\n",i*(DATASIZE),rcvbuf[i*(DATASIZE)],(i*(DATASIZE))+(cargo.size-1),rcvbuf[(i*(DATASIZE))+(cargo.size-1)]);
         info.file_cells[cargo.seq-info.init_transfer_seq] = i;
 
         if(cargo.seq == *info.rcvbase){
