@@ -544,8 +544,7 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
  *  error: -
  */
 void list(void *arg) {
-    char *res = malloc(((DATASIZE)-1)*sizeof(char)); // client has to put \0 at the end
-    char **resptr = &res;
+
     struct pkt listpkt;
     struct pkt rcvack;
     struct elab synop = *((struct elab*)arg);
