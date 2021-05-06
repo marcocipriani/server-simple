@@ -497,7 +497,7 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
  *  return: -
  *  error: -
  */
- void createlist(char **res, const char *path) {
+ void createlist(const char *path) {
 
         int fdl;
         int i;
@@ -519,7 +519,7 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
 
           for(i = 0; i < n_entry; i++){
 
-            if (strcmp(filename[i]->d_name, ".")>0){  
+            if (strcmp(filename[i]->d_name, ".")>0){
                 if(strcmp(filename[i]->d_name, "..")>0){
                     printf("%s \n",filename[i]->d_name);
                     dprintf(fdl,"%s\n",filename[i]->d_name);
@@ -562,7 +562,7 @@ printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipac
         pthread_exit(NULL);
     }
 
-    createlist(resptr, spath);
+    createlist(synop.clipacket.data);
     check(fdl = open("list.txt",O_RDONLY,0644),"server:open server_files.txt");
 
     aux = read(fdl, filedata, DATASIZE);
