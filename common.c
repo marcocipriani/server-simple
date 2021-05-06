@@ -397,3 +397,22 @@ void fflush_stdin(){
 	char c;
 	while( (c=getchar())!=EOF && c!='\n');
 }
+
+/*
+ *  function: simulate_loss
+ *  ----------------------------
+ *  Toss a coin to perform an operation, simulating a packet loss in sender
+ *
+ *  usage: if(simulate_loss()) send(...)
+ *
+ *  return: 1 (head) if operation will be performed, 0 (tail) if not
+ *  error: -
+ */
+int simulate_loss(){
+    int i = (rand()%2);
+    if(i==0){
+printf("simulate_loss: Next send will be lost%d\n");
+        return 0;
+    }
+    return 1;
+}
