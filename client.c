@@ -10,7 +10,7 @@ char rcvbuf[CLIENT_RCVBUFSIZE*(DATASIZE)]; // if local
 index_stack free_pages_rcvbuf;
 pthread_mutex_t mutex_rcvbuf; // mutex for access to receive buffer and free rcvbuf indexes stack
 // stack free_cells // which cells of rcvbuf are free
-pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
+//pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
 pthread_mutex_t mtxlist;
 pthread_t ttid[CLIENT_NUMTHREADS + 2]; // TMP not to do in global, pass it to exit_handler
 
@@ -88,15 +88,25 @@ printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:
 }
 
 void kill_handler(){
-    //struct receiver_info info = *((struct receiver_info *)arg);
+    //struct receiver_info info = *((struct receiver_info *)arg); // for ttid
 
     for(int i=0;i<CLIENT_NUMTHREADS;i++){
         pthread_cancel(ttid[i]);
     }
-    printf("Client op finished \n");
+printf("Client operation completed\n");
     pthread_exit(NULL);
 };
 
+/*
+ *  function: writer
+ *  ----------------------------
+ *  Write packets to the file
+ *
+ *  arg: information about transfer from put
+ *
+ *  return: -
+ *  error: -
+ */
 void writer(void *arg){
     int me = (int)pthread_self();
     int last_write_made = 0; // from 0 to numpkts
@@ -108,7 +118,7 @@ void writer(void *arg){
     int free_index;
 
     sprintf(localpathname, "%s%s", CLIENT_FOLDER, info.filename);
-printf("\nThread writer %d starts writing on localpathname:%s\n", me, localpathname);
+printf("Writer tid:%d starts writing on localpathname:%s\n", me, localpathname);
     fd = open(localpathname, O_RDWR|O_CREAT|O_TRUNC, 0666);
 
     while(last_write_made < info.numpkts){
@@ -119,23 +129,17 @@ printf("\nThread writer %d starts writing on localpathname:%s\n", me, localpathn
 
         pthread_mutex_lock(&info.mutex_rcvbuf);
 
-
         while(info.file_cells[last_write_made] != -1){
             free_index = info.file_cells[last_write_made];
-printf("\n IL WRITER HA SCELTO INDEX: %d \n",free_index);
-
             if(last_write_made == info.numpkts-1)
                 n_bytes_to_write = (*info.last_packet_size);
-printf("\n IL WRITER SCRIVE PER LUNGHEZZA %d \n",n_bytes_to_write);
-
-printf("\n IL WRITER STA SCRIVENDO IL CARATTERE start: %c e la end: %c \n",rcvbuf[free_index*(DATASIZE)],rcvbuf[free_index*(DATASIZE)+n_bytes_to_write-1]);
             writen(fd, &rcvbuf[free_index*(DATASIZE)], n_bytes_to_write);
-            check_mem(memset(&rcvbuf[free_index*(DATASIZE)], 0, DATASIZE), "receiver:memset:rcvbuf[free_index]");
 
-printf("\n DOPO LA SCRITTURA NEL BUFF CI STA start: %c e la end: %c \n", rcvbuf[free_index*(DATASIZE)],rcvbuf[free_index*(DATASIZE)+n_bytes_to_write-1]);
+            check_mem(memset(&rcvbuf[free_index*(DATASIZE)], 0, DATASIZE), "receiver:memset:rcvbuf[free_index]");
             check(push_index(&free_pages_rcvbuf, free_index), "receiver:push_index");
             info.file_cells[last_write_made]=-1;
             last_write_made = last_write_made +1;
+printf("Writer tid:%d has written %d bytes from rcvbuf[%d] to %s", me, n_bytes_to_write, free_index, localpathname);
             if(last_write_made == info.numpkts) break;
         }
 
@@ -143,11 +147,20 @@ printf("\n DOPO LA SCRITTURA NEL BUFF CI STA start: %c e la end: %c \n", rcvbuf[
     }
 
     close(fd);
-
     pthread_kill(ttid[CLIENT_NUMTHREADS + 1], SIGFINAL);
     pthread_exit(NULL);
 }
 
+/*
+ *  function: receiver
+ *  ----------------------------
+ *  Process received packets and send acks
+ *
+ *  arg: information about transfer from put
+ *
+ *  return: -
+ *  error: -
+ */
 void receiver(void *arg){
     int me = (int)pthread_self();
     struct sembuf wait_readypkts;
@@ -164,24 +177,19 @@ waitforpkt:
     wait_readypkts.sem_flg = SEM_UNDO;
     check(semop(info.sem_readypkts, &wait_readypkts, 1), "receiver:semop:sem_readypkts");
 
-    printf("Receiver sees %d in info.file_cells[0]\n", info.file_cells[0]);
-
     pthread_mutex_lock(&info.mutex_rcvqueue);
     if(dequeue(info.received_pkts, &cargo) == -1){
 printf("Can't dequeue packet from received_pkts\n");
     }
-printf("Client %d has dequeue packet %d\n", me, cargo.seq-info.init_transfer_seq);
     //pthread_mutex_unlock(&info.mutex_rcvqueue); TODEL if mutex_rcvbuf = mutex_rcvqueue
     usleep(1000); // TMP
     pthread_mutex_lock(&info.mutex_rcvbuf);
 
     if(info.file_cells[cargo.seq - info.init_transfer_seq] == -1){ // packet still not processed
         i = check(pop_index(&free_pages_rcvbuf), "receiver:pop_index:free_pages_rcvbuf");
-
-printf("Client %d has decided to store packet %d in rcvbuf[%d]\n", me, cargo.seq-info.init_transfer_seq, i);
         check_mem(memcpy(&rcvbuf[i*(DATASIZE)], &cargo.data, cargo.size), "receiver:memcpy:cargo");
-
         info.file_cells[cargo.seq-info.init_transfer_seq] = i;
+printf("Receiver tid:%d has dequeue %d packet and has stored it in rcvbuf[%d]", me, cargo.seq-info.init_transfer_seq, i);
 
         if(cargo.seq == *info.rcvbase){
             (*info.nextseqnum)++; // TODO still necessary
@@ -190,7 +198,7 @@ printf("Client %d has decided to store packet %d in rcvbuf[%d]\n", me, cargo.seq
                 if((*info.rcvbase)-info.init_transfer_seq == info.numpkts) break;
             }
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
-printf("[Client pid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+printf("[Receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
 
             // tell the thread doing writer to write base cargo packet
@@ -201,12 +209,12 @@ printf("[Client pid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pkt
         }else{
             (*info.nextseqnum)++; // TODO still necessary
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
-printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+printf("[Receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
         }
     }else{
         ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
-printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+printf("[Receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
         check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
     }
 
@@ -490,9 +498,9 @@ void list(void *arg){
  *
  *  return: -
  *  error: -
- */
+
  // OLD int get(int sockd, int iseq, int numpkts, char *filename)
-/*void put(void *arg){
+void put(void *arg){
     int i, j, k, z;
     pthread_t *tid;
     int *counter;
@@ -577,7 +585,8 @@ printf("[Client]: errore nell'invio/ricezione del pkt/ack: %d \n", i);
         }
 
         //return 1;
-}*/
+}
+ */
 
 int main(int argc, char const *argv[]){
     pid_t me;
