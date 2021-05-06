@@ -41,6 +41,7 @@ int request_op(struct pkt *synack, int cmd, int pktleft, char *arg){
     srand((unsigned int)time(0));
     initseq=rand()%100;
     check_mem(memset((void *)&synop, 0, sizeof(struct pkt)), "request_op:memset:synop");
+    check_mem(memset((void *)&ack, 0, sizeof(struct pkt)), "request_op:memset:ack");
     synop = makepkt(cmd, initseq, 0, pktleft, strlen(arg), arg);
 
 printf("[Client tid:%d sockd:%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
@@ -92,6 +93,7 @@ void kill_handler(){
     for(int i=0;i<CLIENT_NUMTHREADS;i++){
         pthread_cancel(ttid[i]);
     }
+    printf("Client op finished \n");
     pthread_exit(NULL);
 };
 
@@ -99,7 +101,7 @@ void writer(void *arg){
     int me = (int)pthread_self();
     int last_write_made = 0; // from 0 to numpkts
     struct sembuf wait_writebase;
-    int n_bytes_to_write = DATASIZE;
+    int n_bytes_to_write = (DATASIZE);
     int fd;
     char *localpathname = check_mem(malloc(DATASIZE+strlen(CLIENT_FOLDER)*sizeof(char)), "writer:malloc:localpathname");
     struct receiver_info info = *((struct receiver_info *)arg);
@@ -107,7 +109,7 @@ void writer(void *arg){
 
     sprintf(localpathname, "%s%s", CLIENT_FOLDER, info.filename);
 printf("Thread writer %d starts writing on localpathname:%s\n", me, localpathname);
-    fd = open(localpathname, O_WRONLY|O_CREAT|O_TRUNC, 0666);
+    fd = open(localpathname, O_RDWR|O_CREAT|O_TRUNC, 0666);
 
     while(last_write_made < info.numpkts){
         wait_writebase.sem_num = 0;
@@ -119,12 +121,17 @@ printf("Thread writer %d starts writing on localpathname:%s\n", me, localpathnam
 
         while(info.file_cells[last_write_made] != -1){
             free_index = info.file_cells[last_write_made];
+printf("\n IL WRITER HA SCELTO INDEX: %d \n",free_index);
+
             if(last_write_made == info.numpkts-1)
                 n_bytes_to_write = *info.last_packet_size;
-printf("before rcvbuf[0]:%c%c%c%c%c\n", rcvbuf[30], rcvbuf[31], rcvbuf[32], rcvbuf[33], rcvbuf[34]);
-            write(fd, &rcvbuf[free_index], n_bytes_to_write);
-printf("after rcvbuf[0]:%c%c%c%c%c\n", rcvbuf[30], rcvbuf[31], rcvbuf[32], rcvbuf[33], rcvbuf[34]);
+printf("\n IL WRITER SCRIVER PER LUNGHEZZA %d \n",n_bytes_to_write);
+
+printf("\n IL WRITER STA SCRIVENDO IL CARATTERE start: %c e la end: %c \n",rcvbuf[free_index*(DATASIZE)],rcvbuf[free_index*(DATASIZE)+n_bytes_to_write-1]);
+            writen(fd, &rcvbuf[free_index], n_bytes_to_write);
             check_mem(memset(&rcvbuf[free_index], 0, DATASIZE), "receiver:memset:rcvbuf[free_index]");
+
+printf("\n DOPO LA SCRITTURA NEL BUFF CI STA start: %c e la end: %c \n", rcvbuf[free_index*(DATASIZE)],rcvbuf[free_index*(DATASIZE)+n_bytes_to_write-1]);
             check(push_index(&free_pages_rcvbuf, free_index), "receiver:push_index");
             last_write_made = last_write_made +1;
             if(last_write_made == info.numpkts) break;
@@ -168,8 +175,12 @@ printf("Client %d has dequeue packet %d\n", me, cargo.seq-info.init_transfer_seq
 
     if(info.file_cells[cargo.seq - info.init_transfer_seq] == -1){ // packet still not processed
         i = check(pop_index(&free_pages_rcvbuf), "receiver:pop_index:free_pages_rcvbuf");
+
 printf("Client %d has decided to store packet %d in rcvbuf[%d]\n", me, cargo.seq-info.init_transfer_seq, i);
         check_mem(memcpy(&rcvbuf[i*(DATASIZE)], &cargo.data, cargo.size), "receiver:memcpy:cargo");
+
+printf("\n LA POSIZIONE NEL BUFFER: %d e la lunghezza dei dati scritta: %d \n",i*(DATASIZE),cargo.size);
+printf("\n NEL BUFFER HO SCRITTO buf[%d]:%c buf[%d]:%c\n",i*(DATASIZE),rcvbuf[i*(DATASIZE)],(i*(DATASIZE))+(cargo.size-1),rcvbuf[(i*(DATASIZE))+(cargo.size-1)]);
         info.file_cells[cargo.seq-info.init_transfer_seq] = i;
 
         if(cargo.seq == *info.rcvbase){
@@ -264,7 +275,7 @@ printf("request_op:handshake successful\n");
 receive:
     check_mem(memset((void *)&cargo, 0, sizeof(struct pkt)/*HEADERSIZE + synack.size*/), "get:memset:ack");
     n = recv(t_info.sockd, &cargo, MAXTRANSUNIT, 0);
-printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, t_info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
+printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n\n", me, t_info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size);
 
     if(n==0 || // nothing received
         (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 || // packet with seq out of range

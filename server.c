@@ -170,6 +170,7 @@ printf("ho fatto una pop %d \n",res);
 printf("ho rilasciato il lock\n");
     //sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in));
     check(send(cargo.sockid, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
+printf("[Server tid:%d sockd:%d] Sended packet [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n", me, opersd, sndpkt.op, sndpkt.seq, sndpkt.ack, sndpkt.pktleft, sndpkt.size);
 
 /*    pthread_mutex_trylock(&cargo.mutex_time);
     if (*(cargo.timer) == 0){       //avviso il padre di dormire per timeout_Interval
