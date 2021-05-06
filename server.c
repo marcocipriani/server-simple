@@ -568,6 +568,10 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
  *  error: -
  */
 void list(void *arg) {
+<<<<<<< HEAD
+=======
+
+>>>>>>> 1173715464b37ef84a4dd1c4949f211b17a5c1c5
     struct pkt listpkt;
     struct pkt rcvack;
     struct elab synop = *((struct elab*)arg);
