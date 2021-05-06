@@ -411,7 +411,7 @@ void fflush_stdin(){
 int simulate_loss(){
     int i = (rand()%2);
     if(i==0){
-printf("simulate_loss: Next send will be lost%d\n");
+printf("simulate_loss: Next send will be lost\n");
         return 0;
     }
     return 1;
