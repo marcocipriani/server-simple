@@ -16,6 +16,7 @@
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <signal.h>
+#include <time.h>
 
 #include "macro.h"
 
@@ -416,4 +417,26 @@ printf("simulate_loss: Next send will be lost\n");
         return 0;
     }
     return 1;
+}
+
+void seedpicker() {
+	time_t seed;
+	seed= time(NULL);
+	srand(seed);
+}
+int simulateloss(int isClient){
+	int i,j;
+		seedpicker();
+		i=((rand()%100)+1);
+		if(isClient){
+			if(i<=PACKET_LOSS_CLIENT){
+				printf("\npacket lost by Client!\n");
+				return 0;
+			}else return 1;
+		}else {
+			if(i<=PACKET_LOSS_SERVER){
+				printf("\npacket lost by Server!\n");
+				return 0;
+				}else return 1;
+		}
 }

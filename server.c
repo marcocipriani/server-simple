@@ -93,7 +93,7 @@ int serve_op(struct pkt *synack, struct elab opdata){
     ack = makepkt(status_code, initseq, opdata.clipacket.seq, pktleft, strlen(status), status);
 
     //check(sendto(opersd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, len), "setop:sendto:ack");
-    check(send(opersd, &ack, HEADERSIZE + ack.size, 0), "setop:send:ack");
+    if (simulateloss(0)) check(send(opersd, &ack, HEADERSIZE + ack.size, 0), "setop:send:ack");
 printf("[Server tid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
     /*** Receive synack (response to ack) from client ***/
@@ -173,7 +173,7 @@ printf("ho fatto una pop %d \n",res);
     pthread_mutex_unlock(&cargo.mutex_stack);   //unlock struct stack_elem
 printf("ho rilasciato il lock\n");
     //sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in));
-    check(send(cargo.sockid, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
+    if (simulateloss(0)) check(send(cargo.sockid, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
 printf("[Server tid:%d sockd:%d] Sended packet [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n", me, opersd, sndpkt.op, sndpkt.seq, sndpkt.ack, sndpkt.pktleft, sndpkt.size);
 
     if(*(cargo.startRTT.seq)==-1){
@@ -524,7 +524,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
     check(semctl(semTimer,0,SETVAL,0), "GET: semctl semTimer");
 
     semPkt_to_send = check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"GET: semget semPkt_to_send"); //inizializzazione semPkt_to_send
-    check(semctl(semPkt_to_send,0,SETVAL,numpkt), "GET: semctl semPkt_to_send");
+    if (simulateloss(0)) check(semctl(semPkt_to_send,0,SETVAL,numpkt), "GET: semctl semPkt_to_send");
 
     //preparo il t_info da passare ai thread
     t_info.stack = &stackPtr;
@@ -822,7 +822,7 @@ printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipac
     listpkt = makepkt(CARGO, synack.ack + 1, 0, 0, aux, filedata);
 
 printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
-    check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
+	if (simulateloss(0)) check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
 printf("[Server] Waiting for ack...\n");
     n = recv(opersd, &rcvack, MAXTRANSUNIT, 0); // TMP cliaddr parsed from sender_info
     if(n<1){
@@ -918,7 +918,7 @@ printf("Can't handle this packet\n\n");
                 // polite server: send ack with negative status instead of ignoring
                 check_mem(memset(&ack, 0, sizeof(struct pkt)), "main:memset:ack");
                 ack = makepkt(ACK_NEG, 0, opdata.clipacket.seq, opdata.clipacket.pktleft, strlen("malformed packet"), "malformed packet");
-                check(sendto(connsd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "main:sendto:ack:malformed_packet");
+                if (simulateloss(0)) check(sendto(connsd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "main:sendto:ack:malformed_packet");
 printf("[Server pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, connsd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
                 break;
         }

@@ -45,7 +45,7 @@ int request_op(struct pkt *synack, int cmd, int pktleft, char *arg){
     synop = makepkt(cmd, initseq, 0, pktleft, strlen(arg), arg);
 
 printf("[Client tid:%d sockd:%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
-    check(sendto(sockd, &synop, HEADERSIZE + synop.size, 0, (struct sockaddr *)&main_servaddr, sizeof(struct sockaddr_in)) , "request_op:sendto:synop");
+    if (simulateloss(1)) check(sendto(sockd, &synop, HEADERSIZE + synop.size, 0, (struct sockaddr *)&main_servaddr, sizeof(struct sockaddr_in)) , "request_op:sendto:synop");
 
 printf("[Client tid:%d sockd:%d] Waiting for ack in max %d seconds...\n", me, sockd, CLIENT_TIMEOUT);
     n = recvfrom(sockd, (struct pkt *)&ack, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
@@ -62,7 +62,7 @@ printf("[Client tid:%d sockd:%d] Received ack from server [op:%d][seq:%d][ack:%d
 printf("Operation on server denied\n");
         *synack = makepkt(ACK_NEG, initseq, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
 printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
-        check(sendto(sockd, synack, HEADERSIZE + synack->size, 0, (struct sockaddr *)&child_servaddr, len) , "request_op:send:server denied");
+        if (simulateloss(1)) check(sendto(sockd, synack, HEADERSIZE + synack->size, 0, (struct sockaddr *)&child_servaddr, len) , "request_op:send:server denied");
         close(sockd);
         return -1;
     }
@@ -81,7 +81,7 @@ printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:
         *synack = makepkt(cmd, initseq, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
 
 printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
-        check(send(sockd, synack, HEADERSIZE + synack->size, 0) , "request_op:send:synack");
+        if (simulateloss(1)) check(send(sockd, synack, HEADERSIZE + synack->size, 0) , "request_op:send:synack");
     }
 
     return sockd;
@@ -209,13 +209,13 @@ printf("[Receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][p
         }else{
             (*info.nextseqnum)++; // TODO still necessary
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
-printf("[Receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-            check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
+printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+            if (simulateloss(1)) check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
         }
     }else{
         ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
-printf("[Receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-        check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
+printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+        if (simulateloss(1)) check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
     }
 
     pthread_mutex_unlock(&info.mutex_rcvbuf);
@@ -376,13 +376,13 @@ printf("numero sequenza pacchetto ricevuto fuori range \n");
                 ack = makepkt(ACK_POS, 0, rcv_base - 1, numpkts - (rcv_base - initseqserver), strlen(CARGO_OK), CARGO_OK);
             }
 
-            check(send(sockd, &ack, ack.size, 0), "get:send:new-cargo-ack");
+            if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "get:send:new-cargo-ack");
 printf("il pacchetto #%d e' stato scritto in pos:%d del buffer\n",cargo.seq,pos);
         }
         else{           //PKT NELL'INTERVALLO CORRETTO MA GIA' RICEVUTO
 printf("pacchetto già ricevuto, posso scartarlo \n");
             ack = makepkt(ACK_POS, 0, rcv_base - 1, numpkts - (rcv_base - initseqserver), strlen(CARGO_OK), CARGO_OK);
-            check(send(sockd, &ack, ack.size, 0), "get:send:duplicated-cargo-ack");
+            if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "get:send:duplicated-cargo-ack");
             goto receiver; // il pacchetto viene scartato
         }
         numpkts--;
@@ -485,7 +485,7 @@ void list(void *arg){
       }
   printf("[Client pid:%d sockd:%d] Sending ack to server \n",me, sockd);
       ack = makepkt(ACK_POS, 0,listpkt.seq, listpkt.pktleft,strlen(CARGO_OK), CARGO_OK);
-      check(send(sockd, &ack, ack.size, 0), "list:send:ack");
+      if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "list:send:ack");
 
 }
 
@@ -616,6 +616,7 @@ printf("Welcome to server-simple app, client #%d\n", me);
         cmd = atoi(argv[1]);
         goto quickstart;
     }
+
 
     /*** Parsing op ***/
     while (1) {
