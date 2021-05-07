@@ -20,6 +20,7 @@
 
 #include "macro.h"
 
+int h;
 struct pkt{
     int op; // op codes in macro.h
     int seq;
@@ -420,13 +421,15 @@ printf("simulate_loss: Next send will be lost\n");
 
 void seedpicker() {
 	time_t seed;
-	seed= time(NULL);
+    h+=1;
+	seed= (time_t)h;
 	srand(seed);
 }
 int simulateloss(int isClient){
 	int i,j;
 		seedpicker();
 		i=((rand()%100)+1);
+        printf("num.casuale: %d\n",i);
 		if(isClient){
 			if(i<=PACKET_LOSS_CLIENT){
 				printf("\npacket lost by Client!\n");
