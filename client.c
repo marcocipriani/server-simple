@@ -44,31 +44,31 @@ int request_op(struct pkt *synack, int cmd, int pktleft, char *arg){
     check_mem(memset((void *)&ack, 0, sizeof(struct pkt)), "request_op:memset:ack");
     synop = makepkt(cmd, initseq, 0, pktleft, strlen(arg), arg);
 
-printf("[Client tid:%d sockd:%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
+printf("[Client:request_op tid:%d sockd:%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, sockd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
     if (simulateloss(1)) check(sendto(sockd, &synop, HEADERSIZE + synop.size, 0, (struct sockaddr *)&main_servaddr, sizeof(struct sockaddr_in)) , "request_op:sendto:synop");
 
-printf("[Client tid:%d sockd:%d] Waiting for ack in max %d seconds...\n", me, sockd, CLIENT_TIMEOUT);
+    printf("\tWaiting for ack in max %d seconds...\n\n", CLIENT_TIMEOUT);
     n = recvfrom(sockd, (struct pkt *)&ack, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
 
     if(n==0){
         // TODO retry op
-printf("No ack response from server\n");
+        printf("\tNo ack response from server\n");
         close(sockd);
         return -1;
     }
-printf("[Client tid:%d sockd:%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+printf("[Client:request_op tid:%d sockd:%d] Received ack from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
     if(ack.op == ACK_NEG && ack.ack == synop.seq){
-printf("Operation on server denied\n");
+        printf("\tOperation on server denied\n");
         *synack = makepkt(ACK_NEG, initseq, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
-printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
+printf("[Client:request_op tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
         if (simulateloss(1)) check(sendto(sockd, synack, HEADERSIZE + synack->size, 0, (struct sockaddr *)&child_servaddr, len) , "request_op:send:server denied");
         close(sockd);
         return -1;
     }
 
     if(ack.op == ACK_POS && ack.ack == synop.seq){
-        printf("Operation op:%d seq:%d permitted, estimated packets: %d\nContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
+        printf("\tOperation op:%d seq:%d permitted, estimated packets: %d\n\tContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
 		input = getchar();
         if(input=='n'){
             cmd = ACK_NEG;
@@ -80,20 +80,28 @@ printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:
         initseq++;
         *synack = makepkt(cmd, initseq, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
 
-printf("[Client tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
+printf("[Client:request_op tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
         if (simulateloss(1)) check(send(sockd, synack, HEADERSIZE + synack->size, 0) , "request_op:send:synack");
     }
 
     return sockd;
 }
 
+/*
+ *  function: kill_handler
+ *  ----------------------------
+ *  Complete operation terminating every thread involved
+ *
+ *  return: -
+ *  error: -
+ */
 void kill_handler(){
     //struct receiver_info info = *((struct receiver_info *)arg); // for ttid
 
     for(int i=0;i<CLIENT_NUMTHREADS;i++){
         pthread_cancel(ttid[i]);
     }
-printf("Client operation completed\n");
+printf("Client operation completed\n\n");
     pthread_exit(NULL);
 };
 
@@ -118,8 +126,8 @@ void writer(void *arg){
     int free_index;
 
     sprintf(localpathname, "%s%s", CLIENT_FOLDER, info.filename);
-printf("Writer tid:%d starts writing on localpathname:%s\n", me, localpathname);
-    fd = open(localpathname, O_RDWR|O_CREAT|O_TRUNC, 0666);
+    fd = check(open(localpathname, O_RDWR|O_CREAT|O_TRUNC, 0666), "writer:open:localpathname");
+printf("(Client:writer tid:%d) Opened localpathname:%s\n\n", me, localpathname);
 
     while(last_write_made < info.numpkts){
         wait_writebase.sem_num = 0;
@@ -139,7 +147,7 @@ printf("Writer tid:%d starts writing on localpathname:%s\n", me, localpathname);
             check(push_index(&free_pages_rcvbuf, free_index), "receiver:push_index");
             info.file_cells[last_write_made]=-1;
             last_write_made = last_write_made +1;
-printf("Writer tid:%d has written %d bytes from rcvbuf[%d] to %s", me, n_bytes_to_write, free_index, localpathname);
+printf("(Client:writer tid:%d) Written %d bytes from rcvbuf[%d] to %s\n\n", me, n_bytes_to_write, free_index, localpathname);
             if(last_write_made == info.numpkts) break;
         }
 
@@ -179,7 +187,8 @@ waitforpkt:
 
     pthread_mutex_lock(&info.mutex_rcvqueue);
     if(dequeue(info.received_pkts, &cargo) == -1){
-printf("Can't dequeue packet from received_pkts\n");
+        fprintf(stderr, "Can't dequeue packet from received_pkts\n");
+        // TODO fatal?
     }
     //pthread_mutex_unlock(&info.mutex_rcvqueue); TODEL if mutex_rcvbuf = mutex_rcvqueue
     usleep(1000); // TMP
@@ -189,7 +198,7 @@ printf("Can't dequeue packet from received_pkts\n");
         i = check(pop_index(&free_pages_rcvbuf), "receiver:pop_index:free_pages_rcvbuf");
         check_mem(memcpy(&rcvbuf[i*(DATASIZE)], &cargo.data, cargo.size), "receiver:memcpy:cargo");
         info.file_cells[cargo.seq-info.init_transfer_seq] = i;
-printf("Receiver tid:%d has dequeue %d packet and has stored it in rcvbuf[%d]", me, cargo.seq-info.init_transfer_seq, i);
+printf("(Client:receiver tid:%d) Dequeued %d packet and stored it in rcvbuf[%d]\n\n", me, cargo.seq-info.init_transfer_seq, i);
 
         if(cargo.seq == *info.rcvbase){
             (*info.nextseqnum)++; // TODO still necessary
@@ -198,7 +207,7 @@ printf("Receiver tid:%d has dequeue %d packet and has stored it in rcvbuf[%d]", 
                 if((*info.rcvbase)-info.init_transfer_seq == info.numpkts) break;
             }
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
-printf("[Receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+printf("[Client:receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
 
             // tell the thread doing writer to write base cargo packet
@@ -209,12 +218,12 @@ printf("[Receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][p
         }else{
             (*info.nextseqnum)++; // TODO still necessary
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
-printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+printf("[Client:receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             if (simulateloss(1)) check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
         }
     }else{
         ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
-printf("[Client pid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+printf("[Client:receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
         if (simulateloss(1)) check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
     }
 
@@ -248,10 +257,10 @@ void get(void *arg){
 
     t_info.sockd = request_op(&synack, SYNOP_GET, 0, (char *)arg);
     if(t_info.sockd < 1){
-printf("request_op:handshake unsuccessful\n");
+printf("(Client:get tid:%d) Handshake unsuccessful, exiting operation\n\n", me);
         pthread_exit(NULL);
     }
-printf("request_op:handshake successful\n");
+printf("(Client:get tid:%d) Handshake successful, continuing operation\n\n", me);
 
     t_info.numpkts = synack.pktleft;
     t_info.nextseqnum = check_mem(malloc(sizeof(int)), "get:malloc:nextseqnum");
@@ -304,7 +313,7 @@ receive:
         (cargo.seq - t_info.init_transfer_seq) < ((*t_info.rcvbase)-t_info.init_transfer_seq)-1){ // packet processed yet
         goto receive;
     }
-printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n\n", me, t_info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size);
+printf("[Client:get pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n\n", me, t_info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size);
 
     if( (cargo.seq - t_info.init_transfer_seq) == t_info.numpkts-1)
         *t_info.last_packet_size = cargo.size;
@@ -319,6 +328,16 @@ printf("[Client pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:
     goto receive; // TODO goto->while
 }
 
+/*
+ *  function: sender
+ *  ----------------------------
+ *  Send packet to server and wait for at least an any ack
+ *
+ *  arg: information about transfer from put
+ *
+ *  return: -
+ *  error: -
+ */
 void sender(void *arg){
     int me = (int)pthread_self();
     struct sender_info info = *((struct sender_info *)arg);
@@ -345,7 +364,7 @@ transmit:
     }
 
     check(pop_pkt(info.stack, &cargo), "sender:pop_pkt:stack");
-printf("Sender tid:%d has taken cargo packet seq:%d from stack\n", me, cargo.seq);
+printf("(Client:sender tid:%d) Taken cargo packet seq:%d from stack\n\n", me, cargo.seq);
 
     if(pthread_mutex_unlock(&info.mutex_stack) != 0){
         fprintf(stderr, "sender:pthread_mutex_lock:mutex_stack\n");
@@ -353,7 +372,7 @@ printf("Sender tid:%d has taken cargo packet seq:%d from stack\n", me, cargo.seq
     }
 
     if(simulateloss(0)) check(send(info.sockd, &cargo, HEADERSIZE+cargo.size, 0), "sender:send:cargo");
-printf("[Sender tid:%d sockd:%d] Sended packet [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size, (char *)cargo.data);
+printf("[Client:sender tid:%d sockd:%d] Sended packet [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size, (char *)cargo.data);
 
 check_ack:
     n = recv(info.sockd, &ack, MAXTRANSUNIT, 0);
@@ -485,10 +504,10 @@ void put(void *arg){
     /*** Handshake with server ***/
     t_info.sockd = request_op(&synack, SYNOP_PUT, t_info.numpkts, filename);
     if(t_info.sockd < 1){
-printf("request_op:handshake unsuccessful\n");
+printf("(Client:put tid:%d) Handshake unsuccessful, exiting operation\n\n", me);
         pthread_exit(NULL);
     }
-printf("request_op:handshake successful\n");
+printf("(Client:put tid:%d) Handshake successful, continuing operation\n\n", me);
 
     /*** Creating packets from file and setting packets stack ***/
     fd = check(open(localpathname, O_RDONLY, 0700), "put:open:localpathname");
@@ -501,12 +520,12 @@ printf("request_op:handshake successful\n");
         ++pktseq;
     }
     close(fd);
-printf("Client tid:%d has created %d cargo packets from %s\n", me, t_info.numpkts, localpathname);
+printf("(Client:put tid:%d) Created %d cargo packets from %s\n\n", me, t_info.numpkts, localpathname);
 
     t_info.stack = check_mem(malloc(sizeof(pktstack)), "put:malloc:stack");
     for(int i=t_info.numpkts-1; i>=0; i--){
         check(push_pkt(t_info.stack, cargo_pkts[i]), "put:push_pkt:t_info.stack");
-printf("Client tid:%d has pushed cargo packet #%d into the stack of packets ready to sent\n", me, i);
+printf("(Client:put tid:%d) Pushed cargo packet #%d into the stack of packets ready to sent\n", me, i);
     }
 
     /*** Filling info for threads ***/
@@ -533,11 +552,11 @@ printf("Client tid:%d has pushed cargo packet #%d into the stack of packets read
     //t_info.timeout_Interval
     t_info.father_pid = pthread_self();
 
-printf("Client tid:%d has started transfer of file %s, %d packets estimated\n", me, filename, t_info.numpkts);
+printf("\n(Client:put tid:%d) Started transfer of file %s, %d packets estimated\n\n", me, filename, t_info.numpkts);
     /*** Creating N threads for sending ***/
     for(int t=0; t<CLIENT_NUMTHREADS; t++){
         if(pthread_create(&ttid[t], NULL, (void *)sender, (void *)&t_info) != 0){
-fprintf(stderr, "put:pthread_create:sender%d", t);
+            fprintf(stderr, "put:pthread_create:sender%d", t);
             exit(EXIT_FAILURE);
         }
     }
@@ -561,12 +580,13 @@ int main(int argc, char const *argv[]){
 
     /*** Usage ***/
     if(argc > 3){
-        fprintf(stderr, "Quickstart with %s, extra parameters are discarded.\n[Usage] %s [<operation-number>]\n", argv[1], argv[0]);
+        fprintf(stderr, "\tQuickstart with %s, extra parameters are discarded.\n[Usage] %s [<operation-number>]\n", argv[1], argv[0]);
     }
 
     /*** Init ***/
+    system("clear");
     me = getpid();
-printf("Welcome to server-simple app, client #%d\n", me);
+    printf("\tWelcome to server-simple app, client #%d\n", me);
     len = sizeof(struct sockaddr_in);
     memset((void *)&main_servaddr, 0, len);
     main_servaddr.sin_family = AF_INET;
@@ -585,10 +605,10 @@ printf("Welcome to server-simple app, client #%d\n", me);
 
     /*** Parsing op ***/
     while (1) {
-        printf("\nAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\nChoose an operation and press ENTER: ");
+        printf("\n\tAvailable operations: 1 (list available files), 2 (get a file), 3 (put a file), 0 (exit).\n\tChoose an operation and press ENTER: ");
 
         if((fscanf(stdin, "%d", &cmd)) < 1){
-            printf("Invalid operation code\n");
+            printf("\tInvalid operation code\n");
             fflush_stdin();
             continue;
         }
@@ -604,7 +624,7 @@ quickstart:
                 break;
 
             case SYNOP_GET:
-                printf("Type filename to get and press ENTER: ");
+                printf("\tType filename to get and press ENTER: ");
                 fscanf(stdin, "%s", arg);
                 fflush_stdin();
                 pthread_create(&tid, NULL, (void *)get, (void *)arg);
@@ -613,12 +633,12 @@ quickstart:
 
             case SYNOP_PUT:
 fselect:
-                printf("Type filename to put and press ENTER: ");
+                printf("\tType filename to put and press ENTER: ");
                 fscanf(stdin, "%s", arg);
                 fflush_stdin();
                 sprintf(localpathname, "%s%s", CLIENT_FOLDER, arg);
                 if(calculate_numpkts(localpathname) < 1){
-                    printf("File not found\n");
+                    printf("\tFile not found\n");
                     goto fselect;
                 }
                 pthread_create(&tid, NULL, (void *)put, (void *)arg);
@@ -626,11 +646,11 @@ fselect:
                 break;
 
             case SYNOP_ABORT:
-                printf("Bye client #%d\n", me);
+                printf("\tBye client #%d\n", me);
                 exit(EXIT_SUCCESS);
 
             default:
-                printf("No operation associated with %d\n", cmd);
+                printf("\tNo operation associated with %d\n", cmd);
                 break;
         } // end switch
     } // end while
