@@ -870,9 +870,9 @@ printf("No ack response from client\n");
         close(opersd);
     }
     if(rcvack.ack == listpkt.seq){
-printf("listpkt sent successfully \n");
+printf("It's ok, i received ack about listpkt \n");
     }else{
-printf("There are problems, not response ack from client \n");
+printf("there are problems, not response ack from client \n");
     }
 }
 
@@ -959,7 +959,7 @@ printf("(Server:main pid:%d) Can't handle this packet\n\n", me);
                 // polite server: send ack with negative status instead of ignoring
                 check_mem(memset(&ack, 0, sizeof(struct pkt)), "main:memset:ack");
                 ack = makepkt(ACK_NEG, 0, opdata.clipacket.seq, opdata.clipacket.pktleft, strlen("malformed packet"), "malformed packet");
-                if (simulateloss(0)) check(sendto(connsd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "main:sendto:ack:malformed_packet");
+                /*if (simulateloss(0))*/ check(sendto(connsd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, sizeof(struct sockaddr_in)), "main:sendto:ack:malformed_packet");
 printf("[Server:main pid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, connsd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
                 break;
         }
