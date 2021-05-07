@@ -441,17 +441,18 @@ void list(void *arg){
     int sockd;
     struct pkt synack;
     struct pkt ack;
+    struct pkt rcvack;
     struct sockaddr child_servaddr;
     struct pkt listpkt;
     int fd = open(CLIENT_LIST_FILE, O_CREAT|O_RDWR|O_TRUNC, 0666);
-    int n;
+    int n,r;
 
     sockd = request_op(&synack, SYNOP_LIST, 0, folder);
     if(sockd == -1){
         printf("Operation op:%d seq:%d unsuccessful\n", synack.op, synack.seq);
         pthread_exit(NULL);
     }
-
+receive:
     n = recv(sockd, &listpkt, MAXPKTSIZE, 0);
     printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, sockd, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
 
@@ -463,20 +464,32 @@ void list(void *arg){
             fprintf(stdout, "%s", listpkt.data);
             close(fd);
 
-            printf("[Client pid:%d sockd:%d] Sending ack to server \n",me, sockd);
+        printf("[Client pid:%d sockd:%d] Sending ack to server \n",me, sockd);
             ack = makepkt(ACK_POS, 0,listpkt.seq, listpkt.pktleft,strlen(CARGO_OK), CARGO_OK);
             if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "list:send:ack");
     }else{
-        printf("\n NO AVAILABLE FILE ON SERVER FOLDER\n");
-        write(fd, "NO AVAILABLE FILE ON SERVER FOLDER \n", 35);
+            printf("\n NO AVAILABLE FILE ON SERVER FOLDER\n");
+            write(fd, "NO AVAILABLE FILE ON SERVER FOLDER \n", 35);
 
-        close(fd);
         printf("[Client pid:%d sockd:%d] Sending ack to server \n",me, sockd);
-        ack = makepkt(ACK_POS, 0,listpkt.seq, listpkt.pktleft,strlen(CARGO_OK), CARGO_OK);
-        if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "list:send:ack");
+            ack = makepkt(ACK_POS, 0,listpkt.seq, listpkt.pktleft,strlen(CARGO_OK), CARGO_OK);
+            if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "list:send:ack");
     }
 
+    //after timeout
+    printf("[Client] Waiting for ack FIN...\n");
+        r = recv(sockd, &rcvack, MAXPKTSIZE, 0);
+        //controllo nack??
+        if(r>1){
+          printf("ack FIN received,return to the command choice\n");
+        }else{
+          goto receive;
+        }
 
+
+        close(fd);
+        close(sockd);
+        pthread_exit(NULL);
 }
 
 /*

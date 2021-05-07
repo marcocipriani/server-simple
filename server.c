@@ -838,12 +838,14 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
  */
 void list(void *arg) {
     struct pkt listpkt;
+    struct pkt ack;
     struct pkt rcvack;
     struct elab synop = *((struct elab*)arg);
     struct pkt synack;
     int fdl;
     int aux;
     char filedata[DATASIZE];
+    pthread_t me = getpid();
     int n;
     int opersd;
 
@@ -860,20 +862,38 @@ printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipac
 
     listpkt = makepkt(CARGO, synack.ack + 1, 0, 0, aux, filedata);
 
+transmit:
+
+//start timer
+
 printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
-	if (simulateloss(0)) check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
+  	/*if(simulateloss(0))*/ check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
+
+
 printf("[Server] Waiting for ack...\n");
     n = recv(opersd, &rcvack, MAXPKTSIZE, 0);
+//se non ricevo risposta entro il timer goto transmit
+
+    if(n>0){
+      if(rcvack.ack == listpkt.seq){
+printf("********LIST SENT SUCCESFULLY******** \n");
+printf("[Server pid:%d sockd:%d] Sending ack FIN to client and close \n",(int)me, opersd);
+    ack = makepkt(ACK_POS, 0,listpkt.seq, listpkt.pktleft,strlen(CARGO_OK), CARGO_OK);
+    if (simulateloss(1)) check(send(opersd, &ack, ack.size, 0), "list:send:ack");
+      }
+    }
 
     if(n<1){
 printf("No ack response from client\n");
+printf("[Server pid:%d sockd:%d] Sending ack negative and try to retransmit list to client \n",(int)me, opersd);
+    ack = makepkt(ACK_NEG, 0,listpkt.seq, listpkt.pktleft,strlen(CARGO_OK), CARGO_OK);
+    if (simulateloss(1)) check(send(opersd, &ack, ack.size, 0), "list:send:ack negative ");
+        goto transmit;
         close(opersd);
     }
-    if(rcvack.ack == listpkt.seq){
-printf("listpkt sent successfully \n");
-    }else{
-printf("There are problems, not response ack from client \n");
-    }
+
+    close(opersd);
+    pthread_exit(NULL);
 }
 
 int main(int argc, char const *argv[]){
