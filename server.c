@@ -42,11 +42,11 @@ int check_validity(char **status, int *pktleft, int op, char *arg){
         case SYNOP_GET:
             sprintf(localpathname, "%s%s", SERVER_FOLDER, arg);
             if ((*pktleft = calculate_numpkts(localpathname)) == -1){
-                *status = "File not available";
+                *status = FILE_NOT_AVAILABLE;
 printf("check_validity: Invalid operation on this server\n");
                 return ACK_NEG;
             }
-            *status = "File available";
+            *status = FILE_AVAILABLE;
             break;
 
         case SYNOP_PUT:
