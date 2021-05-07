@@ -92,7 +92,7 @@ int serve_op(struct pkt *synack, struct elab opdata){
     ack = makepkt(status_code, initseq, opdata.clipacket.seq, pktleft, strlen(status), status);
 
     //check(sendto(opersd, &ack, HEADERSIZE + ack.size, 0, (struct sockaddr *)&opdata.cliaddr, len), "setop:sendto:ack");
-    if (simulateloss(0)) check(send(opersd, &ack, HEADERSIZE + ack.size, 0), "setop:send:ack");
+    /*if (simulateloss(1))*/  check(send(opersd, &ack, HEADERSIZE + ack.size, 0), "setop:send:ack");
 printf("[Server:serve_op tid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
 
     /*** Receive synack (response to ack) from client ***/
@@ -803,7 +803,7 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
 
           check_mem(dirp = opendir(path),"list nell'apertura della directory");
 
-          printf("CONTENUTO DELLA CARTELLA [%s] \n",path);
+          printf("\nCONTENUTO DELLA CARTELLA [%s] \n",path);
           /*Crea un file che contiene la filelist*/
 
           check(fdl = open("list.txt",O_CREAT | O_RDWR | O_TRUNC,0644),"server:open server_files.txt");
@@ -870,9 +870,9 @@ printf("No ack response from client\n");
         close(opersd);
     }
     if(rcvack.ack == listpkt.seq){
-printf("It's ok, i received ack about listpkt \n");
+printf("listpkt sent successfully \n");
     }else{
-printf("there are problems, not response ack from client \n");
+printf("There are problems, not response ack from client \n");
     }
 }
 
