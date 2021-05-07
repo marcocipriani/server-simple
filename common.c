@@ -89,7 +89,6 @@ struct sender_info{
     int *devRTT;
     int *estimatedRTT;
     struct sample startRTT;
-    //struct timespec *endRTT;
     int *timeout_Interval;
     pthread_t father_pid;       //pid del padre
 };

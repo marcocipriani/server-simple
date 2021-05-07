@@ -6,7 +6,6 @@ int sockd; // TODEL sockd->connsd
 int connsd;
 struct sockaddr_in listen_addr;
 socklen_t len;
-struct sockaddr_in cliaddr; // TODEL cliaddr->getpeername(sockd)
 pthread_mutex_t mtxlist;
 char *msg;
 void **tstatus;
@@ -99,7 +98,7 @@ printf("[Server:serve_op tid:%d sockd:%d] Sending ack [op:%d][seq:%d][ack:%d][pk
     /*** Receive synack (response to ack) from client ***/
     printf("\tWaiting for synack in %d seconds...\n", SERVER_TIMEOUT);
     memset(synack, 0, sizeof(struct pkt));
-    n = recv(opersd, synack, MAXTRANSUNIT, 0);
+    n = recv(opersd, synack, MAXPKTSIZE, 0);
 
     if(n<1){
         printf("\tNo synack response from client\n");
@@ -173,7 +172,7 @@ void thread_sendpkt(void *arg){
     cargo = *((struct sender_info *)arg);
     struct timespec end;
 
-    int opersd=cargo.sockd;
+    int opersd = cargo.sockd;
     socklen_t len;
 
 transmit:
@@ -227,81 +226,82 @@ printf("cargo.startRTT->start; %d  %lf per pkt; %d\n",(int)cargo.startRTT.start-
     }
     check(pthread_mutex_unlock(&cargo.mutex_time),"THREAD: error unlock time");*/
 check_ack:
-    n=recvfrom(opersd, &rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len);
+    n = recv(opersd, &rcvack, MAXPKTSIZE, 0);
 
-    check(pthread_mutex_lock(&cargo.mutex_ack_counter),"THREAD: error lock Ack Counters");
+    if(pthread_mutex_lock(&cargo.mutex_ack_counter) != 0){
+        fprintf(stderr, "thread_sendpkt:pthread_mutex_lock:mutex_ack_counter\n");
+        exit(EXIT_FAILURE);
+    }
 
+    if(n>0){
 printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ack) - (cargo.initialseq) + 1);
 printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initialseq), cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]);
 
-    if(n>0){
-      if(*(cargo.startRTT.seq)==rcvack.ack){
-        *(cargo.startRTT.seq)=-1;
-        clock_gettime( CLOCK_REALTIME,&end);
+        if(*(cargo.startRTT.seq)==rcvack.ack){
+            *(cargo.startRTT.seq)=-1;
+            clock_gettime( CLOCK_REALTIME,&end);
 printf("end %d  %lf per pkt:%d\n",(int)end.tv_sec,(float)(1e-9)*end.tv_nsec,rcvack.ack-cargo.initialseq);
-        int sampleRTT = ((end.tv_sec - cargo.startRTT.start->tv_sec) + (1e-9)*(end.tv_nsec - cargo.startRTT.start->tv_nsec))*(1e6);
+            int sampleRTT = ((end.tv_sec - cargo.startRTT.start->tv_sec) + (1e-9)*(end.tv_nsec - cargo.startRTT.start->tv_nsec))*(1e6);
 printf("SampleRTT: %d ns\n",sampleRTT);
-        *(cargo.estimatedRTT)=(0.875*(*cargo.estimatedRTT))+(0.125*sampleRTT);
+            *(cargo.estimatedRTT)=(0.875*(*cargo.estimatedRTT))+(0.125*sampleRTT);
 printf("new estimatedRTT: %d ns\n",*(cargo.estimatedRTT));
-        *(cargo.devRTT)=(0.75*(*cargo.devRTT))+(0.25*(abs(sampleRTT-(*cargo.estimatedRTT))));
+            *(cargo.devRTT)=(0.75*(*cargo.devRTT))+(0.25*(abs(sampleRTT-(*cargo.estimatedRTT))));
 printf("new devRTT: %d ns\n",*(cargo.devRTT));
-        *(cargo.timeout_Interval)=*(cargo.estimatedRTT)+4*(*cargo.devRTT);
+            *(cargo.timeout_Interval)=*(cargo.estimatedRTT)+4*(*cargo.devRTT);
 printf("new timeout_Interval: %d ns\n",*(cargo.timeout_Interval));
-    }
+        }
 
 
-      if(rcvack.ack-(*(cargo.base))>SERVER_SWND_SIZE || rcvack.ack<(*(cargo.base)-1)){    //ack fuori finestra
+        if(rcvack.ack-(*(cargo.base))>SERVER_SWND_SIZE || rcvack.ack<(*(cargo.base)-1)){    //ack fuori finestra
+            check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
+            goto check_ack;
+        }
+
+        if(rcvack.ack >= *(cargo.base)){   //ricevo un ack nella finestra
+            for (k=*(cargo.base);k<=rcvack.ack;k++){
+                //se pktlft=seq relative..da fare
+                cargo.ack_counters[k - (cargo.initialseq)] = (int)cargo.ack_counters[k - (cargo.initialseq)] + 1; //sottraggo il num.seq iniziale
+                (*(cargo.base))++; //da controllare
+
+                oper.sem_num = 0;                                                 //se ack in finestra
+                oper.sem_op = 1;                                                  //signal a semGlobal
+                oper.sem_flg = SEM_UNDO;
+                check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global at received ack ");
+  printf("valore aggiornato in counter[%d] : %d \n", k - (cargo.initialseq), cargo.ack_counters[k - (cargo.initialseq)]);
+            }
+
+            check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
+            if(rcvack.ack+1 == cargo.initialseq+cargo.numpkts){
+                printf("\t(Server:get tid:%d) Received last ack for file\n", me);
+                pthread_kill(cargo.father_pid, SIGFINAL);
+                pthread_exit(NULL);
+            }
+            goto transmit;
+        } else if(rcvack.ack==(*cargo.base)-1){   //ack duplicato
+            if ((cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) == 3) { // 3 duplicated acks
+printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
+                (cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) = 1;//(cargo.p[(rcvack.ack) - (cargo.initialseq)]) + 1;
+printf("azzero il counter[%d] : %d \n", (rcvack.ack) - (cargo.initialseq), cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]);
+
+                check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
+                retransmit_info.sival_int = (rcvack.ack) - (cargo.initialseq)+1;
+                // sigqueue(cargo.father_pid, SIGRETRANSMIT, retransmit_info);
+                // signature is sigqueue(pid_t pid, int sig, const union sigval value);
+            } else {
+                (cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)])=(int)(cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)])+1;
+                check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
+                goto check_ack;
+            }
+        }
+    } // end if(n>0)
+
+    //se non ho ricevuto niente da rcvfrom
+    if(cargo.ack_counters[sndpkt.seq-cargo.initialseq]>0){ //se il pkt che ho inviato è stato ackato trasmetto uno nuovo
+        check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
+        goto transmit;
+    }else{ //se il mio pkt non è stato ackato continuo ad aspettare l'ack
         check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
         goto check_ack;
-      }
-      if(rcvack.ack >= *(cargo.base)){   //ricevo un ack nella finestra
-          for (k=*(cargo.base);k<=rcvack.ack;k++){
-            //se pktlft=seq relative..da fare
-            cargo.ack_counters[k - (cargo.initialseq)] = (int)cargo.ack_counters[k - (cargo.initialseq)] + 1; //sottraggo il num.seq iniziale
-            (*(cargo.base))++; //da controllare
-
-            oper.sem_num = 0;                                                 //se ack in finestra
-            oper.sem_op = 1;                                                  //signal a semGlobal
-            oper.sem_flg = SEM_UNDO;
-
-            check(semop(SemSnd_Wndw,&oper,1),"THREAD: error signal global at received ack ");
-  printf("valore aggiornato in counter[%d] : %d \n", k - (cargo.initialseq), cargo.ack_counters[k - (cargo.initialseq)]);
-
-          }
-          check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
-          if(rcvack.ack+1 == cargo.initialseq+cargo.numpkts){//if(rcvack.pktlft==0)
-  printf("GET:Ho riscontrato l'ultimo ack del file\n");
-              pthread_kill(cargo.father_pid, SIGFINAL);  //finito il file-il padre dovrà mandare un ack
-              pthread_exit(NULL);
-          }
-            goto transmit;
-      }
-      else if(rcvack.ack==(*cargo.base)-1){    //ack duplicato
-          if ((cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) == 3) { // 3 duplicated acks
-  printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
-              (cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) = 1;//(cargo.p[(rcvack.ack) - (cargo.initialseq)]) + 1;
-  printf("azzero il counter[%d] : %d \n", (rcvack.ack) - (cargo.initialseq), cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]);
-
-              check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
-              retransmit_info.sival_int = (rcvack.ack) - (cargo.initialseq)+1;
-              // sigqueue(cargo.father_pid, SIGRETRANSMIT, retransmit_info);
-              // signature is sigqueue(pid_t pid, int sig, const union sigval value);
-          }
-          else {
-              (cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)])=(int)(cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)])+1;
-              check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
-              goto check_ack;
-          }
-      }
-    }
-    //se non ho ricevuto niente da rcvfrom
-    if(cargo.ack_counters[sndpkt.seq-cargo.initialseq/*pktleft if setted to seq_relative*/]>0){ //se il pkt che ho inviato è stato ackato trasmetto uno nuovo
-      check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
-      goto transmit;
-    }
-    else{       //se il mio pkt non è stato ackato continuo ad aspettare l'ack
-      check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
-      goto check_ack;
     }
 }
 
@@ -684,7 +684,7 @@ printf("(Server:put tid:%d) Handshake successful, continuing operation\n\n", me)
 
 receive:
     check_mem(memset((void *)&cargo, 0, sizeof(struct pkt)), "put:memset:ack");
-    n = recv(t_info.sockd, &cargo, MAXTRANSUNIT, 0);
+    n = recv(t_info.sockd, &cargo, MAXPKTSIZE, 0);
 
     if(n==0 || // nothing received
         (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 || // packet with seq out of range
@@ -721,7 +721,7 @@ printf("[Server:put tid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktl
 
     npkt = pktleft;
     edgepkt = npkt;
-    check(recvfrom(opersd, &rack, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "PUT-server:recvfrom ack-client");
+    check(recvfrom(opersd, &rack, MAXPKTSIZE, 0, (struct sockaddr *)&cliaddr, &len), "PUT-server:recvfrom ack-client");
 printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", rack.op, rack.seq, rack.ack, rack.pktleft, rack.size, rack.data);
 
     // strcmp(rack.op, ACK_POS)
@@ -732,7 +732,7 @@ printf("[Server] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:
 
 receiver:
         while(npkt>0){
-            check(recvfrom(opersd,&cargo, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "PUT-server:recvfrom Cargo");
+            check(recvfrom(opersd,&cargo, MAXPKTSIZE, 0, (struct sockaddr *)&cliaddr, &len), "PUT-server:recvfrom Cargo");
 printf("[Server] pacchetto ricevuto: seq %d, ack %d, pktleft %d, size %d, data %s \n", cargo.seq, cargo.ack, cargo.pktleft, cargo.size, cargo.data);
             pos=(cargo.seq - initseqserver);
 			if(pos>edgepkt && pos<0){
@@ -849,7 +849,8 @@ printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipac
 printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
 	if (simulateloss(0)) check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
 printf("[Server] Waiting for ack...\n");
-    n = recv(opersd, &rcvack, MAXTRANSUNIT, 0); // TMP cliaddr parsed from sender_info
+    n = recv(opersd, &rcvack, MAXPKTSIZE, 0);
+
     if(n<1){
 printf("No ack response from client\n");
         close(opersd);
@@ -903,7 +904,7 @@ int main(int argc, char const *argv[]){
         check_mem(memset(&synop.data, 0, DATASIZE), "main:memset:synop");
 
         printf("\n(Server pid:%d) Waiting for synop...\n", me);
-        check(recvfrom(connsd, &synop, MAXTRANSUNIT, 0, (struct sockaddr *)&cliaddr, &len), "main:rcvfrom:synop");
+        check(recvfrom(connsd, &synop, MAXPKTSIZE, 0, (struct sockaddr *)&cliaddr, &len), "main:rcvfrom:synop");
 printf("[Server pid:%d sockd:%d] Received synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, connsd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, synop.data);
 
         // TODO if ongoing_operations >= BACKLOG send negative ack and goto recvfrom synop

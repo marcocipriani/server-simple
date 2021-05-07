@@ -48,7 +48,7 @@ printf("[Client:request_op tid:%d sockd:%d] Sending synop [op:%d][seq:%d][ack:%d
     if (simulateloss(1)) check(sendto(sockd, &synop, HEADERSIZE + synop.size, 0, (struct sockaddr *)&main_servaddr, sizeof(struct sockaddr_in)) , "request_op:sendto:synop");
 
     printf("\tWaiting for ack in max %d seconds...\n\n", CLIENT_TIMEOUT);
-    n = recvfrom(sockd, (struct pkt *)&ack, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
+    n = recvfrom(sockd, (struct pkt *)&ack, MAXPKTSIZE, 0, (struct sockaddr *)&child_servaddr, &len);
 
     if(n==0){
         // TODO retry op
@@ -155,6 +155,7 @@ printf("(Client:writer tid:%d) Written %d bytes from rcvbuf[%d] to %s\n\n", me, 
     }
 
     close(fd);
+    free(localpathname);
     pthread_kill(ttid[CLIENT_NUMTHREADS + 1], SIGFINAL);
     pthread_exit(NULL);
 }
@@ -176,7 +177,6 @@ void receiver(void *arg){
     struct pkt cargo, ack;
     int i;
     struct receiver_info info = *((struct receiver_info *)arg);
-    //&cargo = check_mem(malloc(sizeof(struct pkt)),"RECEIVER: malloc cargo");
 
 waitforpkt:
     // wait if there are packets to be read
@@ -306,7 +306,7 @@ printf("(Client:get tid:%d) Handshake successful, continuing operation\n\n", me)
 
 receive:
     check_mem(memset((void *)&cargo, 0, sizeof(struct pkt)/*HEADERSIZE + synack.size*/), "get:memset:ack");
-    n = recv(t_info.sockd, &cargo, MAXTRANSUNIT, 0);
+    n = recv(t_info.sockd, &cargo, MAXPKTSIZE, 0);
 
     if(n==0 || // nothing received
         (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 || // packet with seq out of range
@@ -375,7 +375,7 @@ printf("(Client:sender tid:%d) Taken cargo packet seq:%d from stack\n\n", me, ca
 printf("[Client:sender tid:%d sockd:%d] Sended packet [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size, (char *)cargo.data);
 
 check_ack:
-    n = recv(info.sockd, &ack, MAXTRANSUNIT, 0);
+    n = recv(info.sockd, &ack, MAXPKTSIZE, 0);
 
     // CONTINUE
 
@@ -398,7 +398,7 @@ printf("sono il thread # %d \n", me);
 
     sendto(sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
 check_ack:
-    check(recvfrom(sockd, &rcvack, MAXTRANSUNIT, 0, (struct sockaddr *)&servaddr, &len), "CLIENT-put-thread:recvfrom ack-client");
+    check(recvfrom(sockd, &rcvack, MAXPKTSIZE, 0, (struct sockaddr *)&servaddr, &len), "CLIENT-put-thread:recvfrom ack-client");
     // lock buffer
 printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ack) - (cargo->initialseq) + 1);
 printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
@@ -454,7 +454,7 @@ void list(void *arg){
 
       check(getpeername(sockd, &child_servaddr, &len), "list:getpeername:child_servaddr");
 
-      n = recvfrom(sockd, &listpkt, MAXTRANSUNIT, 0, (struct sockaddr *)&child_servaddr, &len);
+      n = recvfrom(sockd, &listpkt, MAXPKTSIZE, 0, (struct sockaddr *)&child_servaddr, &len);
   printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, sockd, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
 
       if(n > 0){
@@ -548,7 +548,6 @@ printf("(Client:put tid:%d) Pushed cargo packet #%d into the stack of packets re
     //t_info.devRTT
     //t_info.estimatedRTT
     //t_info.startRTT
-    //t_info.endRTT
     //t_info.timeout_Interval
     t_info.father_pid = pthread_self();
 
@@ -655,5 +654,6 @@ fselect:
         } // end switch
     } // end while
 
+    free(free_pages_rcvbuf);
     exit(EXIT_FAILURE);
 }

@@ -26,9 +26,9 @@
 #define SIGFINAL SIGUSR2
 
 // Packet settings
-#define MAXTRANSUNIT 1500
+#define MAXPKTSIZE 1500
 #define HEADERSIZE 5*sizeof(int)
-#define DATASIZE MAXTRANSUNIT-HEADERSIZE
+#define DATASIZE MAXPKTSIZE-HEADERSIZE
 #define MAXSEQNUM 65536
 
 // OP codes
