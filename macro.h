@@ -22,8 +22,8 @@
 #define PACKET_LOSS_CLIENT 20
 
 // Sender signals
-#define SIGRETRANSMIT SIGUSR1
-#define SIGFINAL SIGUSR2
+#define SIGFINAL SIGUSR1
+//#define SIGRETRANSMIT SIGUSR2
 
 // Packet settings
 #define MAXPKTSIZE 1500

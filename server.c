@@ -167,8 +167,7 @@ void thread_sendpkt(void *arg){
     struct pkt sndpkt, rcvack;
     int k,n;
     int base; // unused
-    union sigval retransmit_info;
-    struct sembuf oper;
+    struct sembuf oper, signal_retransmit;
     cargo = *((struct sender_info *)arg);
     struct timespec end;
 
@@ -251,7 +250,6 @@ printf("new devRTT: %d ns\n",*(cargo.devRTT));
 printf("new timeout_Interval: %d ns\n",*(cargo.timeout_Interval));
         }
 
-
         if(rcvack.ack-(*(cargo.base))>SERVER_SWND_SIZE || rcvack.ack<(*(cargo.base)-1)){    //ack fuori finestra
             check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
             goto check_ack;
@@ -284,9 +282,26 @@ printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
 printf("azzero il counter[%d] : %d \n", (rcvack.ack) - (cargo.initialseq), cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]);
 
                 check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
-                retransmit_info.sival_int = (rcvack.ack) - (cargo.initialseq)+1;
-                // sigqueue(cargo.father_pid, SIGRETRANSMIT, retransmit_info);
-                // signature is sigqueue(pid_t pid, int sig, const union sigval value);
+
+                if(pthread_mutex_lock(&cargo.mutex_stack) != 0){
+                    fprintf(stderr, "thread_sendpkt:pthread_mutex_lock:mutex_stack%s\n");
+                    exit(EXIT_FAILURE);
+                }
+
+                check(push_pkt(cargo.stack, sndpkt), "thread_sendpkt:pop_pkt:stack");
+printf("(Server:thread_sendpkt tid%d) Locked the stack to put pkt after retransmit and pushed the packet seq:%d back into the stack\n\n", me, sndpkt.seq);
+
+                if(pthread_mutex_unlock(&cargo.mutex_stack) != 0){
+                    fprintf(stderr, "thread_sendpkt:pthread_mutex_unlock:mutex_stack%s\n");
+                    exit(EXIT_FAILURE);
+                }
+
+                // poking the next thread waiting on transmit
+                signal_retransmit.sem_num = 0;
+                signal_retransmit.sem_op = 1;
+                signal_retransmit.sem_flg = SEM_UNDO;
+                check(semop(sem_readypkts, &oper, 1),"thread_sendpkt:semop:signal:sem_readypkts");
+                check(semop(SemSnd_Wndw, &oper, 1),"thread_sendpkt:semop:signal:sem_readypkts");
             } else {
                 (cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)])=(int)(cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)])+1;
                 check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
@@ -583,7 +598,6 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
     act_lastack.sa_flags = 0;
     check(sigaction(SIGFINAL, &act_lastack, NULL), "get:sigaction:siglastack");
 
-    //signal(SIGRETRANSMIT,push_base);//usa sigaction
     //signal(/*stop timer-base aggiornata*/);
     while((base-init)<=numpkts){
     /*
