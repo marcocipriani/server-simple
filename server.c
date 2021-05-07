@@ -208,21 +208,23 @@ printf("ho fatto una pop %d \n",res);
     if (simulateloss(0)) check(send(cargo.sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
 printf("[Server tid:%d sockd:%d] Sended packet [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n\n", me, opersd, sndpkt.op, sndpkt.seq, sndpkt.ack, sndpkt.pktleft, sndpkt.size);
 
-    if(*(cargo.startRTT.seq)==-1){
-        clock_gettime( CLOCK_REALTIME,cargo.startRTT.start);
-printf("cargo.startRTT->start; %d  %lf per pkt; %d\n",(int)cargo.startRTT.start->tv_sec,(float)(1e-9)*cargo.startRTT.start->tv_nsec,sndpkt.seq-cargo.initialseq);
-        *(cargo.startRTT.seq)=sndpkt.seq;
+//     if(*(cargo.startRTT.seq)==-1){
+//         clock_gettime( CLOCK_REALTIME,cargo.startRTT.start);
+// printf("cargo.startRTT->start; %d  %lf per pkt; %d\n",(int)cargo.startRTT.start->tv_sec,(float)(1e-9)*cargo.startRTT.start->tv_nsec,sndpkt.seq-cargo.initialseq);
+//         *(cargo.startRTT.seq)=sndpkt.seq;
+//     }
+    int r = pthread_mutex_trylock(&cargo.mutex_time);
+    if(r==0){
+        if (*(cargo.timer) == 0){       //avviso il padre di dormire per timeout_Interval
+            //avvia sampleRTT
+            check(semop(cargo.semTimer,&sembuf_signal,1),"THREAD: error signal semTimer");
+            *(cargo.timer)=1;
+        }
+        if(pthread_mutex_unlock(&cargo.mutex_time) != 0){
+            fprintf(stderr, "thread_sendpkt:pthread_mutex_unlock:mutex_time\n");
+            exit(EXIT_FAILURE);
+        }
     }
-    pthread_mutex_trylock(&cargo.mutex_time);
-    if (*(cargo.timer) == 0){       //avviso il padre di dormire per timeout_Interval
-      //----->lock timer
-      *(cargo.timer)=1;  //corretto scritto cosi?
-      //avvia sampleRTT
-
-      check(semop(cargo.semTimer,&sembuf_signal,1),"THREAD: error signal semTimer");
-      *(cargo.timer)=1;
-    }
-    check(pthread_mutex_unlock(&cargo.mutex_time),"THREAD: error unlock time");
 check_ack:
     n = recv(opersd, &rcvack, MAXPKTSIZE, 0);
 printf("thr: ho ricevuto qualcosa\n");
@@ -250,7 +252,7 @@ printf("new devRTT: %d ns\n",*(cargo.devRTT));
 printf("new timeout_Interval: %d ns\n",*(cargo.timeout_Interval));
         }
 
-        if(rcvack.ack-(*(cargo.base))>SERVER_SWND_SIZE || rcvack.ack<(*(cargo.base)-1)){    //ack fuori finestra
+        if(rcvack.ack<(*(cargo.base)-1)){    //ack fuori finestra //rcvack.ack-(*(cargo.base))>SERVER_SWND_SIZE ||
             check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
             //memset(&rcvack.data,0,DATASIZE);
             goto check_ack;
@@ -278,8 +280,8 @@ printf("new timeout_Interval: %d ns\n",*(cargo.timeout_Interval));
             //memset(&rcvack,0,sizeof(struct pkt));
             goto transmit;
         }
-        
-        else if(rcvack.ack==(*cargo.base)-1 ){   //ack duplicato   //manca da aumentare counter
+
+        else if(rcvack.ack==(*cargo.base)-1 ){   //ack duplicato
             if ((cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) == 3) { // 3 duplicated acks
 printf("dovrei fare una fast retransmit del pkt con #seg: %d\n", rcvack.ack);
                 (cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) = 1;//(cargo.p[(rcvack.ack) - (cargo.initialseq)]) + 1;
@@ -317,7 +319,7 @@ printf("(Server:thread_sendpkt tid%d) Locked the stack to put pkt after retransm
         }
     } // end if(n>0)//byte ricevuti da recv
     else if((*(cargo.base))<cargo.numpkts+cargo.initialseq){
-        //check(semop(cargo.semTimer,&sembuf_signal,1),"THREAD: error signal global at received nothing ");
+        check(semop(cargo.semTimer,&sembuf_signal,1),"THREAD: error signal global at received nothing ");
     check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
     goto transmit;
     }
@@ -580,7 +582,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
     check(semctl(semTimer,0,SETVAL,0), "GET: semctl semTimer");
 
     semPkt_to_send = check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"GET: semget semPkt_to_send"); //inizializzazione semPkt_to_send
-    /*if (simulateloss(0))*/ check(semctl(semPkt_to_send,0,SETVAL,numpkts), "GET: semctl semPkt_to_send");
+    check(semctl(semPkt_to_send,0,SETVAL,numpkts), "GET: semctl semPkt_to_send");
 
     //preparo il t_info da passare ai thread
     t_info.stack = &stackPtr;
@@ -616,12 +618,12 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
 
     //signal(/*stop timer-base aggiornata*/);
     while((base-init)<=numpkts){
-    
+
         oper.sem_num = 0;
         oper.sem_op = -1;
         oper.sem_flg = SEM_UNDO;
-
         check(semop(semTimer,&oper,1),"GET: error wait semTimer");   //WAIT su semTimer
+
         check(pthread_mutex_lock(&mtxTime),"GET: error lock time");
         oldBase=base;
 printf("prima di dormire: oldbase %d\n",oldBase);
@@ -629,7 +631,7 @@ printf("prima di dormire: oldbase %d\n",oldBase);
 printf("babbo si è svegliato: oldbase %d, newbase %d\n",oldBase,base);
         if (counter[oldBase - init]==0){ //if (oldBase==base)   //RITRASMISSIONE
             check(pthread_mutex_lock(&mtxStack),"GET: error lock stack");
-            push_pkt(&stackPtr,sendpkt[oldBase - init]);  //o handler()signal(sem_pkts_to_send)
+            check(push_pkt(&stackPtr,sendpkt[oldBase - init]), "get:push_pkt:sendpkt[oldBase-init]");  //o handler()signal(sem_pkts_to_send)
 printf("HO PUSHATO PKT %d, relativo %d\n",oldBase, oldBase -init);
             check(pthread_mutex_unlock(&mtxStack),"GET: error lock stack");
 printf("BABBO HA LIBERATO IL LOCK ALLA PILA\n");
@@ -649,7 +651,7 @@ printf("BABBO alza semGlobale\n");
         }
         timer=0;
         check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");
-    
+
     }
     //return 1;
 }
@@ -891,14 +893,9 @@ transmit:
 //start timer
 
 printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
-<<<<<<< HEAD
-  	/*if(simulateloss(0))*/ check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
 
-
-=======
-	if (simulateloss(0)) check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
 	/*if (simulateloss(0))*/ check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
->>>>>>> 6ec7633dcccb574777959d209cc7ef753bbbf510
+
 printf("[Server] Waiting for ack...\n");
     n = recv(opersd, &rcvack, MAXPKTSIZE, 0);
 //se non ricevo risposta entro il timer goto transmit
@@ -920,17 +917,10 @@ printf("[Server pid:%d sockd:%d] Sending ack negative and try to retransmit list
         goto transmit;
         close(opersd);
     }
-<<<<<<< HEAD
 
     close(opersd);
     pthread_exit(NULL);
-=======
-    if(rcvack.ack == listpkt.seq){
-printf("It's ok, i received ack about listpkt \n");
-    }else{
-printf("there are problems, not response ack from client \n");
-    }
->>>>>>> 6ec7633dcccb574777959d209cc7ef753bbbf510
+
 }
 
 int main(int argc, char const *argv[]){
