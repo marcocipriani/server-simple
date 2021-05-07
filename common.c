@@ -74,7 +74,7 @@ int pop_pkt(pktstack *s, struct pkt *res){
 
 struct sender_info{
     pktstack *stack; //puntatore a struct stack_elem
-    int semLoc;              //descrittore semaforo local
+    int sem_readypkts;              //descrittore semaforo local
     int semTimer;
     pthread_mutex_t mutex_time;
     pthread_mutex_t mutex_stack;
@@ -83,8 +83,8 @@ struct sender_info{
     int *ack_counters;      //contatore di ack
     int *base;               //numero sequenza in push_base
     int initialseq;         //numero di sequenza iniziale
-    int numpkt;
-    int sockid;             //socket a cui spedire pkt
+    int numpkts;
+    int sockd;             //socket a cui spedire pkt
     int *timer;
     int *devRTT;
     int *estimatedRTT;

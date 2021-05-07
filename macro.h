@@ -15,6 +15,7 @@
 #define CLIENT_TIMEOUT 30
 #define CLIENT_FOLDER "./client-files/"
 #define CLIENT_NUMTHREADS 5
+#define CLIENT_SWND_SIZE 10
 #define PACKET_LOSS_CLIENT 20
 
 // Sender signals

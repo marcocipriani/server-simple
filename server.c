@@ -53,6 +53,8 @@ printf("check_validity: Invalid operation on this server\n");
             *status = "ok"; // TMP
             break;
     }
+
+    check_mem(memset(localpathname, 0, strlen(SERVER_FOLDER)+(DATASIZE)), "check_validity:memset:localpathname");
 printf("check_validity: Valid operation on this server\n");
     return ACK_POS;
 }
@@ -140,7 +142,7 @@ void thread_sendpkt(void *arg){
     cargo = *((struct sender_info *)arg);
     struct timespec end;
 
-    int opersd=cargo.sockid;
+    int opersd=cargo.sockd;
     socklen_t len;
 
 transmit:
@@ -149,7 +151,7 @@ transmit:
     oper.sem_op = -1;
     oper.sem_flg = SEM_UNDO;
 
-    check(semop(cargo.semLoc,&oper,1),"THREAD: error wait semLoc");    //wait su semLocale=pkts_to_send
+    check(semop(cargo.sem_readypkts,&oper,1),"THREAD: error wait sem_readypkts");    //wait su semLocale=pkts_to_send
                                                                       //controllo che ci siano pkt da inviare
 
     oper.sem_num = 0;
@@ -173,7 +175,7 @@ printf("ho fatto una pop %d \n",res);
     pthread_mutex_unlock(&cargo.mutex_stack);   //unlock struct stack_elem
 printf("ho rilasciato il lock\n");
     //sendto(opersd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&cliaddr, sizeof(struct sockaddr_in));
-    if (simulateloss(0)) check(send(cargo.sockid, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
+    if (simulateloss(0)) check(send(cargo.sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
 printf("[Server tid:%d sockd:%d] Sended packet [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n", me, opersd, sndpkt.op, sndpkt.seq, sndpkt.ack, sndpkt.pktleft, sndpkt.size);
 
     if(*(cargo.startRTT.seq)==-1){
@@ -236,7 +238,7 @@ printf("new timeout_Interval: %d ns\n",*(cargo.timeout_Interval));
 
           }
           check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
-          if(rcvack.ack+1 == cargo.initialseq+cargo.numpkt){//if(rcvack.pktlft==0)
+          if(rcvack.ack+1 == cargo.initialseq+cargo.numpkts){//if(rcvack.pktlft==0)
   printf("GET:Ho riscontrato l'ultimo ack del file\n");
               pthread_kill(cargo.father_pid, SIGFINAL);  //finito il file-il padre dovrà mandare un ack
               pthread_exit(NULL);
@@ -450,7 +452,7 @@ printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipac
         pthread_exit(NULL);
     }
 
-    int numpkt = synack.pktleft;
+    int numpkts = synack.pktleft;
     int iseq = synack.ack + 1;
     int base = synack.ack + 1;
     int init = synack.ack + 1;
@@ -484,34 +486,34 @@ printf("localpathname: %s\n",localpathname);
 
 
 printf("Thread %d: inizio trasferimento \n", me);
-    sendpkt = malloc((numpkt) * sizeof(struct pkt)); /*Alloca la memoria per thread che eseguiranno la get */
+    sendpkt = malloc((numpkts) * sizeof(struct pkt)); /*Alloca la memoria per thread che eseguiranno la get */
     check_mem(sendpkt, "get:malloc:sendpkt");
 
-    counter = malloc(numpkt*sizeof(int));
+    counter = malloc(numpkts*sizeof(int));
     check_mem(counter, "get:malloc:counter");
-    for(z=0; z<numpkt; z++){
+    for(z=0; z<numpkts; z++){
         counter[z] = 0; // inizializza a 0 il counter
     }
 
     ttid = malloc(WSIZE*sizeof(pthread_t));
     check_mem(ttid, "get:malloc:ttid");
 
-    // TODO if numpkt < WSIZE
+    // TODO if numpkts < WSIZE
 
     filedata = (char *)malloc(DATASIZE);
-    for (j = 0; j < numpkt; j++) {
+    for (j = 0; j < numpkts; j++) {
         aux = readn(fd, filedata, DATASIZE);
 printf("aux %d \n", aux);
 printf("lunghezza dati: %lu\n", strlen((char *)filedata));
 
-        sendpkt[j] = makepkt(CARGO, iseq, 0, numpkt - j, aux, filedata);
+        sendpkt[j] = makepkt(CARGO, iseq, 0, numpkts - j, aux, filedata);
 printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendpkt[j].pktleft, sendpkt[j].data);
         memset(filedata, 0, DATASIZE);
         iseq++;
     }
     close(fd);
 
-    for (z=numpkt-1; z>=0;z--){
+    for (z=numpkts-1; z>=0;z--){
         push_pkt(&stackPtr, sendpkt[z]);
     }
 
@@ -524,11 +526,11 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
     check(semctl(semTimer,0,SETVAL,0), "GET: semctl semTimer");
 
     semPkt_to_send = check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"GET: semget semPkt_to_send"); //inizializzazione semPkt_to_send
-    if (simulateloss(0)) check(semctl(semPkt_to_send,0,SETVAL,numpkt), "GET: semctl semPkt_to_send");
+    if (simulateloss(0)) check(semctl(semPkt_to_send,0,SETVAL,numpkts), "GET: semctl semPkt_to_send");
 
     //preparo il t_info da passare ai thread
     t_info.stack = &stackPtr;
-    t_info.semLoc = semPkt_to_send;
+    t_info.sem_readypkts = semPkt_to_send;
     t_info.semTimer = semTimer;
     t_info.mutex_time = mtxTime;
     t_info.mutex_stack = mtxStack;
@@ -536,8 +538,8 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
     t_info.ack_counters = counter;
     t_info.base = &base;
     t_info.initialseq = base;
-    t_info.numpkt = numpkt;
-    t_info.sockid = opersd;
+    t_info.numpkts = numpkts;
+    t_info.sockd = opersd;
     t_info.timer = &timer;
     t_info.devRTT = &devRTT;
     t_info.estimatedRTT = &estimatedRTT;
@@ -552,7 +554,6 @@ printf("server:ERRORE pthread_create GET in main");
         }
     }
 
-	//close(fd);
     memset(&act_lastack, 0, sizeof(struct sigaction));
     act_lastack.sa_handler = &kill_handler;
     sigemptyset(&act_lastack.sa_mask);
@@ -561,7 +562,7 @@ printf("server:ERRORE pthread_create GET in main");
 
     //signal(SIGRETRANSMIT,push_base);//usa sigaction
     //signal(/*stop timer-base aggiornata*/);
-    while((base-init)<=numpkt){
+    while((base-init)<=numpkts){
     /*
         oper.sem_num = 0;
         oper.sem_op = -1;
@@ -661,13 +662,14 @@ printf("request_op:handshake successful\n");
 receive:
     check_mem(memset((void *)&cargo, 0, sizeof(struct pkt)), "put:memset:ack");
     n = recv(t_info.sockd, &cargo, MAXTRANSUNIT, 0);
-printf("[Server tid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n\n", me, t_info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size);
 
     if(n==0 || // nothing received
         (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 || // packet with seq out of range
         (cargo.seq - t_info.init_transfer_seq) < ((*t_info.rcvbase)-t_info.init_transfer_seq)-1){ // packet processed yet
         goto receive;
     }
+printf("[Server tid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n\n", me, t_info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size);
+
     if( (cargo.seq - t_info.init_transfer_seq) == t_info.numpkts-1)
         *t_info.last_packet_size = cargo.size;
 
