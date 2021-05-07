@@ -15,6 +15,7 @@
 // Client settings
 #define CLIENT_PORT 4193
 #define CLIENT_FOLDER "./client-files/"
+#define CLIENT_LIST_FILE "./client-files/list.txt"
 #define CLIENT_RCVBUFSIZE 30
 #define CLIENT_TIMEOUT 30
 #define CLIENT_NUMTHREADS 5

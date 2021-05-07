@@ -284,7 +284,7 @@ printf("azzero il counter[%d] : %d \n", (rcvack.ack) - (cargo.initialseq), cargo
                 check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters");
 
                 if(pthread_mutex_lock(&cargo.mutex_stack) != 0){
-                    fprintf(stderr, "thread_sendpkt:pthread_mutex_lock:mutex_stack%s\n");
+                    fprintf(stderr, "thread_sendpkt:pthread_mutex_lock:mutex_stack\n");
                     exit(EXIT_FAILURE);
                 }
 
@@ -292,7 +292,7 @@ printf("azzero il counter[%d] : %d \n", (rcvack.ack) - (cargo.initialseq), cargo
 printf("(Server:thread_sendpkt tid%d) Locked the stack to put pkt after retransmit and pushed the packet seq:%d back into the stack\n\n", me, sndpkt.seq);
 
                 if(pthread_mutex_unlock(&cargo.mutex_stack) != 0){
-                    fprintf(stderr, "thread_sendpkt:pthread_mutex_unlock:mutex_stack%s\n");
+                    fprintf(stderr, "thread_sendpkt:pthread_mutex_unlock:mutex_stack\n");
                     exit(EXIT_FAILURE);
                 }
 
@@ -300,7 +300,7 @@ printf("(Server:thread_sendpkt tid%d) Locked the stack to put pkt after retransm
                 signal_retransmit.sem_num = 0;
                 signal_retransmit.sem_op = 1;
                 signal_retransmit.sem_flg = SEM_UNDO;
-                check(semop(sem_readypkts, &oper, 1),"thread_sendpkt:semop:signal:sem_readypkts");
+                check(semop(cargo.sem_readypkts, &oper, 1),"thread_sendpkt:semop:signal:sem_readypkts");
                 check(semop(SemSnd_Wndw, &oper, 1),"thread_sendpkt:semop:signal:sem_readypkts");
             } else {
                 (cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)])=(int)(cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)])+1;

@@ -435,42 +435,38 @@ printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initia
  *  error: -
  */
 void list(void *arg){
+    char *folder = (char *)arg;
+    int me = (int)pthread_self();
+    int sockd;
+    struct pkt synack;
+    struct pkt ack;
+    struct sockaddr child_servaddr;
+    struct pkt listpkt;
+    int fd = open(CLIENT_LIST_FILE, O_CREAT|O_RDWR|O_TRUNC, 0666);
+    int n;
 
-      char *folder = (char *)arg;
-      int me = (int)pthread_self();
-      int sockd;
-      struct pkt synack;
-      struct pkt ack;
-      struct sockaddr child_servaddr;
-      struct pkt listpkt;
-      int fd = open("./client-files/client-list.txt", O_CREAT|O_RDWR|O_TRUNC, 0666);
-      int n;
+    sockd = request_op(&synack, SYNOP_LIST, 0, folder);
+    if(sockd == -1){
+        printf("Operation op:%d seq:%d unsuccessful\n", synack.op, synack.seq);
+        pthread_exit(NULL);
+    }
 
-      sockd = request_op(&synack, SYNOP_LIST, 0, folder);
-      if(sockd == -1){
-          printf("Operation op:%d seq:%d unsuccessful\n", synack.op, synack.seq);
-          pthread_exit(NULL);
-      }
+    n = recv(sockd, &listpkt, MAXPKTSIZE, 0);
+    printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, sockd, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
 
-      check(getpeername(sockd, &child_servaddr, &len), "list:getpeername:child_servaddr");
-
-      n = recvfrom(sockd, &listpkt, MAXPKTSIZE, 0, (struct sockaddr *)&child_servaddr, &len);
-  printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, sockd, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
-
-      if(n > 0){
-          printf("Available files on server:\n");
-              //buffer[n] = '\0';
-              pthread_mutex_lock(&mtxlist);
-              write(fd, listpkt.data, listpkt.size);
-              pthread_mutex_unlock(&mtxlist);
-              fprintf(stdout, "%s", listpkt.data); //stampa a schermo il contenuto del pacchetto
-      }else{
-          printf("No available files on server\n");
-          write(fd, "No available files on server\n", 30);
-      }
-  printf("[Client pid:%d sockd:%d] Sending ack to server \n",me, sockd);
-      ack = makepkt(ACK_POS, 0,listpkt.seq, listpkt.pktleft,strlen(CARGO_OK), CARGO_OK);
-      if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "list:send:ack");
+    if(n > 0){
+        printf("Available files on server:\n");
+            pthread_mutex_lock(&mtxlist);
+            write(fd, listpkt.data, listpkt.size);
+            pthread_mutex_unlock(&mtxlist);
+            fprintf(stdout, "%s", listpkt.data);
+    }else{
+        printf("No available files on server\n");
+        write(fd, "No available files on server\n", 30);
+    }
+    printf("[Client pid:%d sockd:%d] Sending ack to server \n",me, sockd);
+    ack = makepkt(ACK_POS, 0,listpkt.seq, listpkt.pktleft,strlen(CARGO_OK), CARGO_OK);
+    if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "list:send:ack");
 
 }
 
