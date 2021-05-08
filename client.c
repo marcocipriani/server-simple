@@ -9,6 +9,7 @@ void **tstatus;
 int sem_sender_wnd; // global semaphore for sending packets
 char rcvbuf[CLIENT_RCVBUFSIZE*(DATASIZE)]; // if local
 index_stack free_pages_rcvbuf;
+int receiver_window;
 pthread_mutex_t mutex_rcvbuf; // mutex for access to receive buffer and free rcvbuf indexes stack
 //pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
 pthread_mutex_t mtxlist;
@@ -145,6 +146,8 @@ printf("(Client:writer tid:%d) Opened localpathname:%s\n\n", me, localpathname);
 
             check_mem(memset(&rcvbuf[free_index*(DATASIZE)], 0, DATASIZE), "receiver:memset:rcvbuf[free_index]");
             check(push_index(&free_pages_rcvbuf, free_index), "receiver:push_index");
+            receiver_window++;
+printf("Receiver window:%d ++\n", receiver_window);
             info.file_cells[last_write_made]=-1;
             last_write_made = last_write_made +1;
 printf("(Client:writer tid:%d) Written %d bytes from rcvbuf[%d] to %s\n\n", me, n_bytes_to_write, free_index, localpathname);
@@ -174,7 +177,7 @@ void receiver(void *arg){
     int me = (int)pthread_self();
     struct sembuf wait_readypkts;
     struct sembuf signal_writebase;
-    struct pkt cargo, ack;
+    struct pkt cargo, ack, ping;
     int i;
     struct receiver_info info = *((struct receiver_info *)arg);
 
@@ -188,14 +191,23 @@ waitforpkt:
     pthread_mutex_lock(&info.mutex_rcvqueue);
     if(dequeue(info.received_pkts, &cargo) == -1){
         fprintf(stderr, "Can't dequeue packet from received_pkts\n");
-        // TODO fatal?
+        exit(EXIT_FAILURE);
     }
-    //pthread_mutex_unlock(&info.mutex_rcvqueue); TODEL if mutex_rcvbuf = mutex_rcvqueue
     usleep(1000); // TMP
     pthread_mutex_lock(&info.mutex_rcvbuf);
 
+    if(cargo.seq == PING){ // TODO last scenario of next if
+        ping = makepkt(ACK_NEG, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(RECEIVER_WINDOW_STATUS), RECEIVER_WINDOW_STATUS);
+printf("[Client:receiver tid:%d sockd:%d] Sending ping-receiver_window [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ping.op, ping.seq, ping.ack, ping.pktleft, ping.size, (char *)ping.data);
+        /*if (simulateloss(1))*/ check(send(info.sockd, &ping, HEADERSIZE + ack.size, 0) , "receiver:send:ping-receiver_window");
+        check_mem(memset((void *)&ping, 0, MAXPKTSIZE), "receiver:memset:ping");
+        goto waitforpkt;
+    }
+
     if(info.file_cells[cargo.seq - info.init_transfer_seq] == -1){ // packet still not processed
         i = check(pop_index(&free_pages_rcvbuf), "receiver:pop_index:free_pages_rcvbuf");
+        receiver_window--;
+printf("Receiver window:%d --\n", receiver_window);
         check_mem(memcpy(&rcvbuf[i*(DATASIZE)], &cargo.data, cargo.size), "receiver:memcpy:cargo");
         info.file_cells[cargo.seq-info.init_transfer_seq] = i;
 printf("(Client:receiver tid:%d) Dequeued %d packet and stored it in rcvbuf[%d]\n\n", me, cargo.seq-info.init_transfer_seq, i);
@@ -206,8 +218,8 @@ printf("(Client:receiver tid:%d) Dequeued %d packet and stored it in rcvbuf[%d]\
                 (*info.rcvbase)++; // increase rcvbase for every packet already processed
                 if((*info.rcvbase)-info.init_transfer_seq == info.numpkts) break;
             }
-            ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
-printf("[Client:receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+            ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(CARGO_OK), CARGO_OK);
+printf("[Client:receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
 
             // tell the thread doing writer to write base cargo packet
@@ -217,13 +229,13 @@ printf("[Client:receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ac
             check(semop(info.sem_writebase, &signal_writebase, 1), "get:semop:signal:sem_writebase");
         }else{
             (*info.nextseqnum)++; // TODO still necessary
-            ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
-printf("[Client:receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+            ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(CARGO_MISSING), CARGO_MISSING);
+printf("[Client:receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
             /*if (simulateloss(1))*/ check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
         }
     }else{
-        ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_MISSING), CARGO_MISSING);
-printf("[Client:receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
+        ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(CARGO_MISSING), CARGO_MISSING);
+printf("[Client:receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
         /*if (simulateloss(1))*/ check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
     }
 
@@ -315,6 +327,7 @@ receive:
         check(send(t_info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
         goto receive;
     }
+
 printf("[Client:get pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n\n", me, t_info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size);
 
     if( (cargo.seq - t_info.init_transfer_seq) == t_info.numpkts-1)
@@ -743,6 +756,7 @@ int main(int argc, char const *argv[]){
     check(semctl(sem_sender_wnd, 0, SETVAL, CLIENT_SWND_SIZE), "main:init:semctl:sem_sender_wnd");
     free_pages_rcvbuf = check_mem(malloc(CLIENT_RCVBUFSIZE * sizeof(struct index)), "main:init:malloc:free_pages_rcvbuf");
     init_index_stack(&free_pages_rcvbuf, CLIENT_RCVBUFSIZE);
+    int receiver_window = CLIENT_RCVBUFSIZE;
     check(pthread_mutex_init(&mutex_rcvbuf, NULL), "main:pthread_mutex_init:mutex_rcvbuf");
     check(pthread_mutex_init(&mtxlist, NULL), "main:pthread_mutex_init:mtxlist");
     if(argc == 2){

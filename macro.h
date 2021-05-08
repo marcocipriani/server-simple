@@ -40,9 +40,11 @@
 #define ACK_POS 4
 #define ACK_NEG 5
 #define CARGO 6
+#define PING 7
 
 // ACK and validity status
 #define CARGO_OK "received correctly"
 #define CARGO_MISSING "missing base packet"
 #define FILE_AVAILABLE "File available"
 #define FILE_NOT_AVAILABLE "File not available"
+#define RECEIVER_WINDOW_STATUS "This packet contains receiver window size"
