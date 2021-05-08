@@ -229,7 +229,7 @@ void rec (void *arg){
     sembuf_signal.sem_num = 0;
     sembuf_signal.sem_op = 1;
     sembuf_signal.sem_flg = SEM_UNDO;
-    
+
 while(1){
         n = recv(opersd, &rcvack, MAXPKTSIZE, 0);
 printf("thr: ho ricevuto qualcosa\n");
@@ -287,7 +287,7 @@ printf("valore di counter[%d]: base-1: %d \n",*(cargo.base)-1-cargo.initialseq,c
             //memset(&rcvack,0,sizeof(struct pkt));
             //goto transmit;
         }
-        
+
         else if(rcvack.ack<=(*cargo.base)-1 ){   //ack duplicato   //manca da aumentare counter
             if ((cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) >= 3) { // 3 duplicated acks
                 (*cargo.base)=rcvack.ack+1;
@@ -336,7 +336,7 @@ printf("(Server:thread_sendpkt tid%d) Locked the stack to put pkt after retransm
     //goto transmit;
 }
 }
-    
+
 
 void thread_sendpkt(void *arg){
     int me = (int)pthread_self();
@@ -456,7 +456,7 @@ printf("new timeout_Interval: %d ns\n",*(cargo.timeout_Interval));
             //memset(&rcvack,0,sizeof(struct pkt));
             goto transmit;
         }
-        
+
         else if(rcvack.ack<=(*cargo.base)-1 ){   //ack duplicato   //manca da aumentare counter
             if ((cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) == 3) { // 3 duplicated acks
                 (*cargo.base)=rcvack.ack+1;
@@ -793,7 +793,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
             fprintf(stderr, "get:pthread_create:thread_sendpkt");
             exit(EXIT_FAILURE);
         }
- 
+
     for(j=0;j<SERVER_SWND_SIZE;j++){
         if(pthread_create(&ttid[j], NULL, (void *)rec, (void *)&t_info) != 0){
             fprintf(stderr, "get:pthread_create:thread_sendpkt");
@@ -822,9 +822,9 @@ printf("prima di dormire: oldbase %d\n",oldBase);
 printf("babbo si è svegliato: oldbase %d, newbase %d\n",oldBase,base);
         if (counter[oldBase - init]==0){ //if (oldBase==base)   //RITRASMISSIONE
             check(pthread_mutex_lock(&mtxStack),"GET: error lock stack");
-            //push_pkt(&stackPtr,sendpkt[oldBase - init+2]); 
+            //push_pkt(&stackPtr,sendpkt[oldBase - init+2]);
             //push_pkt(&stackPtr,sendpkt[oldBase - init+1]);  //o handler()signal(sem_pkts_to_send)
-            push_pkt(&stackPtr,sendpkt[oldBase - init]); 
+            push_pkt(&stackPtr,sendpkt[oldBase - init]);
 printf("HO PUSHATO PKT %d, relativo %d\n",oldBase, oldBase -init);
             check(pthread_mutex_unlock(&mtxStack),"GET: error lock stack");
 printf("BABBO HA LIBERATO IL LOCK ALLA PILA\n");
@@ -844,7 +844,7 @@ printf("BABBO alza semGlobale\n");
         }
         timer=0;
         check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");
-    
+
     }
     //return 1;
 }
