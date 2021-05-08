@@ -199,7 +199,7 @@ waitforpkt:
     if(cargo.seq == PING){ // TODO last scenario of next if
         ping = makepkt(ACK_NEG, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(RECEIVER_WINDOW_STATUS), RECEIVER_WINDOW_STATUS);
 printf("[Client:receiver tid:%d sockd:%d] Sending ping-receiver_window [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ping.op, ping.seq, ping.ack, ping.pktleft, ping.size, (char *)ping.data);
-        /*if (simulateloss(1))*/ check(send(info.sockd, &ping, HEADERSIZE + ack.size, 0) , "receiver:send:ping-receiver_window");
+        if (simulateloss(1)) check(send(info.sockd, &ping, HEADERSIZE + ack.size, 0) , "receiver:send:ping-receiver_window");
         check_mem(memset((void *)&ping, 0, MAXPKTSIZE), "receiver:memset:ping");
         goto waitforpkt;
     }
@@ -220,7 +220,7 @@ printf("(Client:receiver tid:%d) Dequeued %d packet and stored it in rcvbuf[%d]\
             }
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(CARGO_OK), CARGO_OK);
 printf("[Client:receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-            check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
+            if (simulateloss(1)) check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
 
             // tell the thread doing writer to write base cargo packet
             signal_writebase.sem_num = 0;
@@ -231,12 +231,12 @@ printf("[Client:receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ac
             (*info.nextseqnum)++; // TODO still necessary
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(CARGO_MISSING), CARGO_MISSING);
 printf("[Client:receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-            /*if (simulateloss(1))*/ check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
+            if (simulateloss(1)) check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
         }
     }else{
         ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(CARGO_MISSING), CARGO_MISSING);
 printf("[Client:receiver tid:%d sockd:%d] Sending ack-missingcargo [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-        /*if (simulateloss(1))*/ check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
+        if (simulateloss(1)) check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-missingcargo");
     }
 
     pthread_mutex_unlock(&info.mutex_rcvbuf);
@@ -324,7 +324,7 @@ receive:
         (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 /*|| // packet with seq out of range
         (cargo.seq - t_info.init_transfer_seq) < ((*t_info.rcvbase)-t_info.init_transfer_seq)-1*/){ // packet processed yet
         ack = makepkt(ACK_POS, *t_info.nextseqnum, (*t_info.rcvbase)-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
-        check(send(t_info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
+        if (simulateloss(1)) check(send(t_info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
         goto receive;
     }
 
@@ -756,7 +756,7 @@ int main(int argc, char const *argv[]){
     check(semctl(sem_sender_wnd, 0, SETVAL, CLIENT_SWND_SIZE), "main:init:semctl:sem_sender_wnd");
     free_pages_rcvbuf = check_mem(malloc(CLIENT_RCVBUFSIZE * sizeof(struct index)), "main:init:malloc:free_pages_rcvbuf");
     init_index_stack(&free_pages_rcvbuf, CLIENT_RCVBUFSIZE);
-    int receiver_window = CLIENT_RCVBUFSIZE;
+    receiver_window = CLIENT_RCVBUFSIZE;
     check(pthread_mutex_init(&mutex_rcvbuf, NULL), "main:pthread_mutex_init:mutex_rcvbuf");
     check(pthread_mutex_init(&mtxlist, NULL), "main:pthread_mutex_init:mtxlist");
     if(argc == 2){

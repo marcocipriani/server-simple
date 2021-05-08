@@ -20,7 +20,7 @@
 
 #include "macro.h"
 
-int h;
+int h=1;
 struct pkt{
     int op; // op codes in macro.h
     int seq;
@@ -91,8 +91,12 @@ struct sender_info{
     int *estimatedRTT;
     struct sample startRTT;
     int *timeout_Interval;
+    struct timespec *time_upload;
     pthread_t father_pid;       //pid del padre
     struct pkt *array;
+    int *rwnd;
+    int *nextseqnum;
+    
 };
 
 struct index{
