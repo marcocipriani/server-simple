@@ -87,6 +87,10 @@ printf("[Client:request_op tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%
     return sockd;
 }
 
+void abort_handler(){
+    pthread_exit(NULL);
+}
+
 /*
  *  function: kill_handler
  *  ----------------------------
@@ -204,7 +208,7 @@ printf("(Client:receiver tid:%d) Dequeued %d packet and stored it in rcvbuf[%d]\
             (*info.nextseqnum)++; // TODO still necessary
             while(info.file_cells[(*info.rcvbase)-info.init_transfer_seq] != -1){
                 (*info.rcvbase)++; // increase rcvbase for every packet already processed
-                if((*info.rcvbase)-info.init_transfer_seq == info.numpkts) break;
+                if((*info.rcvbase)-info.init_transfer_seq == info.numpkts) break;  // if last packet
             }
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
 printf("[Client:receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
@@ -254,6 +258,8 @@ void get(void *arg){
     struct sigaction act_lastwrite;
     int n;
     struct sembuf signal_readypkts;
+
+    signal(SIGINT, abort_handler);
 
     t_info.sockd = request_op(&synack, SYNOP_GET, 0, (char *)arg);
     if(t_info.sockd < 1){
@@ -309,8 +315,8 @@ receive:
     n = recv(t_info.sockd, &cargo, MAXPKTSIZE, 0);
 
     if(n==0 || // nothing received
-        (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 || // packet with seq out of range
-        (cargo.seq - t_info.init_transfer_seq) < ((*t_info.rcvbase)-t_info.init_transfer_seq)-1){ // packet processed yet
+        (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 ){ // packet with seq out of range
+        // || (cargo.seq - t_info.init_transfer_seq) < ((*t_info.rcvbase)-t_info.init_transfer_seq)-1){ // packet processed yet
         goto receive;
     }
 printf("[Client:get pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d]\n\n", me, t_info.sockd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size);
@@ -573,7 +579,6 @@ void list(void *arg){
     struct pkt synack;
     struct pkt ack;
     struct pkt rcvack;
-    struct sockaddr child_servaddr;
     struct pkt listpkt;
     int fd = open(CLIENT_LIST_FILE, O_CREAT|O_RDWR|O_TRUNC, 0666);
     int n,r;
@@ -587,7 +592,7 @@ receive:
     n = recv(sockd, &listpkt, MAXPKTSIZE, 0);
     printf("[Client pid:%d sockd:%d] Received list from server [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:...]\n", me, sockd, listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size);
 
-    if(n > HEADERSIZE){
+    if(n > 0){
         printf("Available files on server %d:\n",n);
             pthread_mutex_lock(&mtxlist);
             write(fd, listpkt.data, listpkt.size);

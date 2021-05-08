@@ -5,7 +5,7 @@
 #define DEFAULT_PATH "~"
 #define SERVER_FOLDER "./server-files/"
 #define SERVER_RCVBUFSIZE 30
-#define SERVER_TIMEOUT 60
+#define SERVER_TIMEOUT 10
 #define SERVER_NUMTHREADS 5
 #define SERVER_SWND_SIZE 20
 #define PACKET_LOSS_SERVER 20
@@ -17,9 +17,9 @@
 #define CLIENT_FOLDER "./client-files/"
 #define CLIENT_LIST_FILE "./client-files/list.txt"
 #define CLIENT_RCVBUFSIZE 30
-#define CLIENT_TIMEOUT 30
+#define CLIENT_TIMEOUT 5
 #define CLIENT_NUMTHREADS 5
-#define CLIENT_SWND_SIZE 10
+#define CLIENT_SWND_SIZE 3
 #define PACKET_LOSS_CLIENT 20
 
 // Sender signals
