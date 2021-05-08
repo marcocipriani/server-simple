@@ -51,7 +51,7 @@ printf("[Client:request_op tid:%d sockd:%d] Sending synop [op:%d][seq:%d][ack:%d
     printf("\tWaiting for ack in max %d seconds...\n\n", CLIENT_TIMEOUT);
     n = recvfrom(sockd, (struct pkt *)&ack, MAXPKTSIZE, 0, (struct sockaddr *)&child_servaddr, &len);
 
-    if(n==0){
+    if(n<1){
         // TODO retry op
         printf("\tNo ack response from server\n");
         close(sockd);
