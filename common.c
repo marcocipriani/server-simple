@@ -92,6 +92,7 @@ struct sender_info{
     struct sample startRTT;
     int *timeout_Interval;
     pthread_t father_pid;       //pid del padre
+    struct pkt *array;
 };
 
 struct index{

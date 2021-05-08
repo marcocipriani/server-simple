@@ -5,20 +5,20 @@
 #define DEFAULT_PATH "~"
 #define SERVER_FOLDER "./server-files/"
 #define SERVER_RCVBUFSIZE 30
-#define SERVER_TIMEOUT 60
+#define SERVER_TIMEOUT 3
 #define SERVER_NUMTHREADS 5
 #define SERVER_SWND_SIZE 10
-#define PACKET_LOSS_SERVER 20
+#define PACKET_LOSS_SERVER 50
 
-#define TIMEINTERVAL 500000
+#define TIMEINTERVAL 50000
 
 // Client settings
 #define CLIENT_PORT 4193
 #define CLIENT_FOLDER "./client-files/"
 #define CLIENT_LIST_FILE "./client-files/list.txt"
-#define CLIENT_RCVBUFSIZE 30
-#define CLIENT_TIMEOUT 30
-#define CLIENT_NUMTHREADS 5
+#define CLIENT_RCVBUFSIZE 40
+#define CLIENT_TIMEOUT 3
+#define CLIENT_NUMTHREADS 1
 #define CLIENT_SWND_SIZE 10
 #define PACKET_LOSS_CLIENT 20
 
