@@ -104,7 +104,7 @@ printf("\tClient operation completed\n\n");
     pthread_exit(NULL);
 };
 void put_kill_handler(){
-    for(int i=0;i<CLIENT_NUMTHREADS+1;i++){ // kill acker threads
+    for(int i=0;i<CLIENT_NUMTHREADS+1;i++){ // kill ackreceiver threads
         pthread_cancel(put_ttid[i]);
     }
 printf("\tClient operation completed\n\n");
@@ -464,7 +464,17 @@ printf("invio pacchetto con #seq: %d\n",sndpkt.seq);
     }
 }
 
-void acker(void *arg){
+/*
+ *  function: ackreceiver
+ *  ----------------------------
+ *  Receive ack and update receiver base
+ *
+ *  arg: sinformation about transfer from get
+ *
+ *  return: -
+ *  error: -
+ */
+void ackreceiver(void *arg){
     int me = (int)pthread_self();
     struct sender_info cargo;//t_info
     struct pkt rcvack;
@@ -487,7 +497,7 @@ printf("thread recettori\n");
     while(1){
         n = recv(opersd, &rcvack, MAXPKTSIZE, 0);
 
-printf("(Client:acker tid%d) Actual base is %d\n", me, *cargo.base);
+printf("(Client:ackreceiver tid%d) Actual base is %d\n", me, *cargo.base);
 printf("thr: ho ricevuto qualcosa %d\n",n);
         if(n==0){
 printf("thr entra in 0\n");
@@ -780,8 +790,8 @@ printf("(Client:put tid:%d) Pushed cargo packet #%d into the stack of packets re
 printf("\n(Client:put tid:%d) Started transfer of file %s, %d packets estimated\n\n", me, filename, t_info.numpkts);
     /*** Creating N thread for receiving ack ***/
     for(int t=0; t<CLIENT_NUMTHREADS; t++){
-        if(pthread_create(&put_ttid[t], NULL, (void *)acker, (void *)&t_info) != 0){
-            fprintf(stderr, "put:pthread_create:acker:%d", t);
+        if(pthread_create(&put_ttid[t], NULL, (void *)ackreceiver, (void *)&t_info) != 0){
+            fprintf(stderr, "put:pthread_create:ackreceiver:%d", t);
             exit(EXIT_FAILURE);
         }
     }
