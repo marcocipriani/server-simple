@@ -46,13 +46,12 @@ int request_op(struct pkt *synack, int cmd, int pktleft, char *arg){
     synop = makepkt(cmd, initseq, 0, pktleft, strlen(arg), arg);
 
 printf("[Client:request_op tid:%d sockd:%d] Sending synop [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, sockd, synop.op, synop.seq, synop.ack, synop.pktleft, synop.size, (char *)synop.data);
-    /*if (simulateloss(1))*/ check(sendto(sockd, &synop, HEADERSIZE + synop.size, 0, (struct sockaddr *)&main_servaddr, sizeof(struct sockaddr_in)) , "request_op:sendto:synop");
+    check(sendto(sockd, &synop, HEADERSIZE + synop.size, 0, (struct sockaddr *)&main_servaddr, sizeof(struct sockaddr_in)) , "request_op:sendto:synop");
 
     printf("\tWaiting for ack in max %d seconds...\n\n", CLIENT_TIMEOUT);
     n = recvfrom(sockd, (struct pkt *)&ack, MAXPKTSIZE, 0, (struct sockaddr *)&child_servaddr, &len);
 
     if(n<1){
-        // TODO retry op
         printf("\tNo ack response from server\n");
         close(sockd);
         return -1;
@@ -63,7 +62,7 @@ printf("[Client:request_op tid:%d sockd:%d] Received ack from server [op:%d][seq
         printf("\tOperation on server denied\n");
         *synack = makepkt(ACK_NEG, initseq, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
 printf("[Client:request_op tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
-        /*if (simulateloss(1))*/ check(sendto(sockd, synack, HEADERSIZE + synack->size, 0, (struct sockaddr *)&child_servaddr, len) , "request_op:send:server denied");
+        check(sendto(sockd, synack, HEADERSIZE + synack->size, 0, (struct sockaddr *)&child_servaddr, len) , "request_op:send:server denied");
         close(sockd);
         return -1;
     }
@@ -83,7 +82,7 @@ printf("[Client:request_op tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%
         *synack = makepkt(cmd, initseq, ack.seq, ack.pktleft, strlen(synop.data), synop.data);
 
 printf("[Client:request_op tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, sockd, synack->op, synack->seq, synack->ack, synack->pktleft, synack->size, (char *)synack->data);
-        /*if (simulateloss(1))*/  check(send(sockd, synack, HEADERSIZE + synack->size, 0) , "request_op:send:synack");
+        check(send(sockd, synack, HEADERSIZE + synack->size, 0) , "request_op:send:synack");
     }
 
     return sockd;

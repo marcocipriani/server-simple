@@ -434,7 +434,7 @@ int simulateloss(int isClient){
     }else{
         h+=1;
         seedpicker();
-        i=(((rand())%100)+1);
+        i=(((rand()+rand())%100)+1);
         if(i<=PACKET_LOSS_SERVER){
             printf("\npacket lost by Server!\n");
             return 0;
