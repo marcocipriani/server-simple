@@ -416,24 +416,25 @@ void fflush_stdin(){
  */
 int h=1;
 void seedpicker() {
-	time_t seed;
+    time_t seed;
     h+=1;
-	seed= (time_t)h;
-	srand(seed);
+    seed = (time_t)h;
+    srand(seed);
 }
 int simulateloss(int isClient){
-	int i;
+    int i;
     if(isClient){
-        h+=1;
-        srand(time(NULL));
-		i=((rand()%100)+1);
+        seedpicker();
+        i=((rand()%100)+1);
         printf("num.casuale: %d\n",i);
         if(i<=PACKET_LOSS_CLIENT){
             printf("\npacket lost by Client!\n");
             return 0;
         }else return 1;
-    }else {
-		i=((((rand())*(rand()))%100)+1);
+    }else{
+        h+=1;
+        seedpicker();
+        i=((((rand())*(rand()))%100)+1);
         if(i<=PACKET_LOSS_SERVER){
             printf("\npacket lost by Server!\n");
             return 0;
