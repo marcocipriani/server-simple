@@ -486,7 +486,7 @@ printf("azzero il counter[%d] : %d \n", (ack.ack) - (info.initialseq), info.ack_
                     exit(EXIT_FAILURE);
                 }
 
-                check(push_pkt(info.stack, cargo), "sender:pop_pkt:stack");
+                check(push_pkt(info.stack, cargo), "sender:push_pkt:stack");
 printf("(sender: tid%d) Locked the stack to put pkt after retransmit and pushed the packet seq:%d back into the stack\n\n", me, cargo.seq);
 
                 if(pthread_mutex_unlock(&info.mutex_stack) != 0){

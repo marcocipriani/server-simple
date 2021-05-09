@@ -204,7 +204,7 @@ printf("(*(*cargo.rwnd buona)); %d \n",(*cargo.rwnd));
                 exit(EXIT_FAILURE);
             }
     printf("ho preso il lock\n");
-            int res=pop_pkt(cargo.stack,&sndpkt);
+            int res = check(pop_pkt(cargo.stack,&sndpkt), "sending:pop_pkt:sndpkt");
             if(sndpkt.seq>(*cargo.base)){
                 //(*cargo.nextseqnum)++;
                 (*cargo.nextseqnum)=sndpkt.seq+1;
@@ -240,7 +240,7 @@ printf("(*cargo.nextseqnum) -(*cargo.base): %d\n",(*cargo.nextseqnum)-(*cargo.ba
             }
             usleep(10000);
 
-            pop_pkt(cargo.stack,&sndpkt);
+            check(pop_pkt(cargo.stack,&sndpkt), "sending:pop_pkt:sndpkt");
             if(sndpkt.seq>(*cargo.base)){
                 //(*cargo.nextseqnum)++;
                 (*cargo.nextseqnum)=sndpkt.seq+1;
@@ -435,7 +435,7 @@ printf("thr:fermo al mutex_stack\n");
         exit(EXIT_FAILURE);
     }
 printf("ho preso il lock\n");
-    int res=pop_pkt(cargo.stack,&sndpkt);
+    int res = check(pop_pkt(cargo.stack,&sndpkt), "thread_sendpkt:pop_pkt:sndpkt");
 
 printf("ho fatto una pop %d \n",res);
 
@@ -814,7 +814,7 @@ printf("(sendpkt[%d] SIZE %d, pktleft %d, dati %s \n", j, sendpkt[j].size, sendp
     close(fd);
 
     for (z=numpkts-1; z>=0;z--){
-        push_pkt(&stackPtr, sendpkt[z]);
+        check(push_pkt(&stackPtr, sendpkt[z]), "get:push_pkt:sendpkt[z]");
     }
 
     /*****INIZIALIZZAZIONE SEMAFORI E MUTEX**********/
@@ -893,9 +893,7 @@ printf("prima di dormire: oldbase %d\n",oldBase);
 printf("babbo si è svegliato: oldbase %d, newbase %d\n",oldBase,base);
         if (oldBase==base) {  //RITRASMISSIONEif (counter[oldBase - init]==0){
             check(pthread_mutex_lock(&mtxStack),"GET: error lock stack");
-            //push_pkt(&stackPtr,sendpkt[oldBase - init+2]);
-            //push_pkt(&stackPtr,sendpkt[oldBase - init+1]);  //o handler()signal(sem_pkts_to_send)
-            push_pkt(&stackPtr,sendpkt[oldBase - init]);
+            check(push_pkt(&stackPtr,sendpkt[oldBase - init]), "get:push_pkt:sendpkt[oldBase-init]");
 printf("HO PUSHATO PKT %d, relativo %d\n",oldBase, oldBase -init);
             check(pthread_mutex_unlock(&mtxStack),"GET: error lock stack");
 printf("BABBO HA LIBERATO IL LOCK ALLA PILA\n");
