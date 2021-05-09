@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -O2 #-g
+CFLAGS=-Wall -Wextra -O2 -pthread #-g
 SRCS=client.c server.c
 OBJS=$(SRCS:.c=.o)
 BIN=$(SRCS:.c=.dSYM)
