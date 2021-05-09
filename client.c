@@ -13,8 +13,7 @@ int receiver_window;
 pthread_mutex_t mutex_rcvbuf; // mutex for access to receive buffer and free rcvbuf indexes stack
 //pthread_mutex_t write_sem; // lock for rcvbuf, free_cells and file_counter
 pthread_mutex_t mutex_list; // lock for writing on list.txt
-pthread_t ttid[CLIENT_NUMTHREADS + 2]; // TMP not to do in global, pass it to exit_handler
-pthread_t put_ttid[CLIENT_NUMTHREADS + 1];
+pthread_t put_ttid[CLIENT_NUMTHREADS + 1], get_ttid[3];
 
 /*
  *  function: request_op
@@ -70,7 +69,8 @@ printf("[Client:request_op tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%
     }
 
     if(ack.op == ACK_POS && ack.ack == synop.seq){
-        printf("\tOperation op:%d seq:%d permitted, estimated packets: %d\n\tContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
+        if(synop.op == SYNOP_PUT) printf("\tOperation op:%d seq:%d permitted, estimated packets: %d\n\tContinue? [Y/n] ", synop.op, synop.seq, synop.pktleft);
+        else printf("\tOperation op:%d seq:%d permitted, estimated packets: %d\n\tContinue? [Y/n] ", synop.op, synop.seq, ack.pktleft);
 		input = getchar();
         if(input=='n'){
             cmd = ACK_NEG;
@@ -97,11 +97,18 @@ printf("[Client:request_op tid:%d sockd:%d] Sending synack [op:%d][seq:%d][ack:%
  *  return: -
  *  error: -
  */
-void kill_handler(){
+void get_kill_handler(){
     //struct receiver_info info = *((struct receiver_info *)arg); // for ttid
 
-    for(int i=0;i<CLIENT_NUMTHREADS;i++){
-        pthread_cancel(ttid[i]);
+    for(int i=0;i<1;i++){
+        pthread_cancel(get_ttid[i]);
+    }
+printf("\tClient operation completed\n\n");
+    pthread_exit(NULL);
+};
+void put_kill_handler(){
+    for(int i=0;i<CLIENT_NUMTHREADS+1;i++){ // kill acker threads
+        pthread_cancel(put_ttid[i]);
     }
 printf("\tClient operation completed\n\n");
     pthread_exit(NULL);
@@ -160,7 +167,7 @@ printf("(Client:writer tid:%d) Written %d bytes from rcvbuf[%d] to %s\n\n", me, 
 
     close(fd);
     free(localpathname);
-    pthread_kill(ttid[CLIENT_NUMTHREADS + 1], SIGFINAL);
+    pthread_kill(get_ttid[2], SIGFINAL);
     pthread_exit(NULL);
 }
 
@@ -298,22 +305,22 @@ printf("(Client:get tid:%d) Handshake successful, continuing operation\n\n", me)
     t_info.filename = (char *)arg;
 
     // for(int t=0; t<CLIENT_NUMTHREADS; t++)
-    if(pthread_create(&ttid[0], NULL, (void *)receiver, (void *)&t_info) != 0){
+    if(pthread_create(&get_ttid[0], NULL, (void *)receiver, (void *)&t_info) != 0){
         fprintf(stderr, "put:pthread_create:receiver");
         exit(EXIT_FAILURE);
     }
-    if(pthread_create(&ttid[1], NULL, (void *)writer, (void *)&t_info) != 0){
+    if(pthread_create(&get_ttid[1], NULL, (void *)writer, (void *)&t_info) != 0){
         fprintf(stderr, "put:pthread_create:writer");
         exit(EXIT_FAILURE);
     }
 
     memset(&act_lastwrite, 0, sizeof(struct sigaction));
-    act_lastwrite.sa_handler = &kill_handler;
+    act_lastwrite.sa_handler = &get_kill_handler;
     sigemptyset(&act_lastwrite.sa_mask);
     act_lastwrite.sa_flags = 0;
     check(sigaction(SIGFINAL, &act_lastwrite, NULL), "get:sigaction:siglastwrite");
 
-    ttid[2] = pthread_self();
+    get_ttid[2] = pthread_self();
 
 receive:
     check_mem(memset((void *)&cargo, 0, sizeof(struct pkt)/*HEADERSIZE + synack.size*/), "get:memset:ack");
@@ -766,22 +773,22 @@ printf("(Client:put tid:%d) Pushed cargo packet #%d into the stack of packets re
     t_info.array = cargo_pkts;
 
 printf("\n(Client:put tid:%d) Started transfer of file %s, %d packets estimated\n\n", me, filename, t_info.numpkts);
-    /*** Creating 1 thread for sending ***/
-    if(pthread_create(&put_ttid[CLIENT_NUMTHREADS+1], NULL, (void *)sender, (void *)&t_info) != 0){
-        fprintf(stderr, "put:pthread_create:sender");
-        exit(EXIT_FAILURE);
-    }
     /*** Creating N thread for receiving ack ***/
     for(int t=0; t<CLIENT_NUMTHREADS; t++){
-        if(pthread_create(&ttid[t], NULL, (void *)acker, (void *)&t_info) != 0){
+        if(pthread_create(&put_ttid[t], NULL, (void *)acker, (void *)&t_info) != 0){
             fprintf(stderr, "put:pthread_create:acker:%d", t);
             exit(EXIT_FAILURE);
         }
     }
+    /*** Creating 1 thread for sending ***/
+    if(pthread_create(&put_ttid[CLIENT_NUMTHREADS], NULL, (void *)sender, (void *)&t_info) != 0){
+        fprintf(stderr, "put:pthread_create:sender");
+        exit(EXIT_FAILURE);
+    }
 
 
     memset(&act_lastack, 0, sizeof(struct sigaction));
-    act_lastack.sa_handler = &kill_handler;
+    act_lastack.sa_handler = &put_kill_handler;
     sigemptyset(&act_lastack.sa_mask);
     act_lastack.sa_flags = 0;
     check(sigaction(SIGFINAL, &act_lastack, NULL), "put:sigaction:siglastack");

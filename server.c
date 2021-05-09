@@ -126,29 +126,18 @@ printf("[Server:serve_op tid:%d sockd:%d] Received synack [op:%d][seq:%d][ack:%d
  *  return: -
  *  error: -
  */
-void kill_handler(){
+void get_kill_handler(){
     for(int i=0;i<SERVER_NUMTHREADS;i++){
         pthread_cancel(ttid[i]);
     }
 printf("\tServer operation completed\n\n");
     pthread_exit(NULL);
 }
-
-/*
- *  function: server_kill_handler
- *  ----------------------------
- *  Complete operation terminating every thread involved
- *
- *  return: -
- *  error: -
- */
-void server_kill_handler(){
-    //struct receiver_info info = *((struct receiver_info *)arg); // for ttid
-
-    for(int i=0;i<CLIENT_NUMTHREADS;i++){
-        pthread_cancel(ttid[i]);
+void put_kill_handler(){
+    for(int i=0;i<SERVER_NUMTHREADS;i++){
+        pthread_cancel(server_ttid[i]);
     }
-printf("Server operation completed\n\n");
+printf("\tServer operation completed\n\n");
     pthread_exit(NULL);
 };
 
@@ -633,7 +622,7 @@ printf("(Server:writer tid:%d) Written %d bytes from rcvbuf[%d] to %s\n\n", me, 
 
     close(fd);
     free(localpathname);
-    pthread_kill(ttid[CLIENT_NUMTHREADS + 1], SIGFINAL);
+    pthread_kill(server_ttid[SERVER_NUMTHREADS + 1], SIGFINAL);
     pthread_exit(NULL);
 }
 
@@ -888,7 +877,7 @@ printf(" creato il send thread \n");
 printf("creati i rec ack thread \n");
 
     memset(&act_lastack, 0, sizeof(struct sigaction));
-    act_lastack.sa_handler = &kill_handler;
+    act_lastack.sa_handler = &get_kill_handler;
     sigemptyset(&act_lastack.sa_mask);
     act_lastack.sa_flags = 0;
     check(sigaction(SIGFINAL, &act_lastack, NULL), "get:sigaction:siglastack");
@@ -973,8 +962,8 @@ printf("(Server:put tid:%d) Handshake successful, continuing operation\n\n", me)
     t_info.mutex_rcvbuf = mutex_rcvbuf;
     t_info.received_pkts = check_mem(malloc(sizeof(pktqueue)), "put:malloc:received_pkts");
     init_queue(t_info.received_pkts);
-    t_info.file_cells = check_mem(malloc(synack.pktleft * sizeof(int)), "put:malloc:file_cells");
-    for(int i=0; i<synack.pktleft; i++){
+    t_info.file_cells = check_mem(malloc(t_info.numpkts * sizeof(int)), "put:malloc:file_cells");
+    for(int i=0; i<t_info.numpkts; i++){
         t_info.file_cells[i] = -1;
     }
     t_info.init_transfer_seq = synack.seq + 1;
@@ -982,7 +971,7 @@ printf("(Server:put tid:%d) Handshake successful, continuing operation\n\n", me)
     *t_info.rcvbase = synack.seq + 1;
     t_info.last_packet_size = check_mem(malloc(sizeof(int)), "put:malloc:last_packet_size");
     t_info.filename = synop.clipacket.data;
-    server_ttid[CLIENT_NUMTHREADS+1] = pthread_self();
+    server_ttid[SERVER_NUMTHREADS+1] = pthread_self();
 
     /*** Creating N threads for receiving and 1 for writing ***/
     for(int t=0; t<SERVER_NUMTHREADS; t++){
@@ -998,7 +987,7 @@ printf("(Server:put tid:%d) Handshake successful, continuing operation\n\n", me)
 
     /*** Capture SIGFINAL when writer thread has finished to write onto the file ***/
     memset(&act_lastwrite, 0, sizeof(struct sigaction));
-    act_lastwrite.sa_handler = &server_kill_handler;
+    act_lastwrite.sa_handler = &put_kill_handler;
     sigemptyset(&act_lastwrite.sa_mask);
     act_lastwrite.sa_flags = 0;
     check(sigaction(SIGFINAL, &act_lastwrite, NULL), "put:sigaction:siglastwrite");
