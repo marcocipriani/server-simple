@@ -6,12 +6,12 @@ int sockd; // TODEL sockd->connsd
 int connsd;
 struct sockaddr_in listen_addr;
 socklen_t len;
-pthread_mutex_t mtxlist;
+pthread_mutex_t mutex_list;
 char *msg;
 void **tstatus;
 char *spath = SERVER_FOLDER; // root folder for server
 pthread_t *ttid; // TODO sigqueue from writer to father
-
+int list_dbit = 0; // dirty bit for list
 char rcvbuf[SERVER_RCVBUFSIZE*(DATASIZE)];
 index_stack free_pages_rcvbuf;
 pthread_mutex_t mutex_rcvbuf;
@@ -171,7 +171,7 @@ void sending(void*arg){
     cargo = *((struct sender_info *)arg);
     struct timespec end;
     struct pkt emptypkt;
-    
+
     emptypkt = makepkt(PING, 0, 0, 0, 0, NULL);
     int opersd = cargo.sockd;
     socklen_t len;
@@ -201,7 +201,7 @@ printf("(*(*cargo.rwnd buona)); %d \n",(*cargo.rwnd));
     printf("thr:attesa globale\n");
             check(semop(SemSnd_Wndw,&sembuf_wait,1),"THREAD: error wait global");    //wait su semGlob
     printf("thr:fermo al mutex_stack\n");
-            
+
             if(pthread_mutex_lock(&cargo.mutex_stack) != 0) {   //lock sulla struct stack_elem
                 fprintf(stderr, "sender:pthread_mutex_lock:mutex_stack\n");
                 exit(EXIT_FAILURE);
@@ -236,13 +236,13 @@ printf("(*cargo.nextseqnum) -(*cargo.base): %d\n",(*cargo.nextseqnum)-(*cargo.ba
     printf("thr:attesa globale\n");
             check(semop(SemSnd_Wndw,&sembuf_wait,1),"THREAD: error wait global");    //wait su semGlob
     printf("thr:fermo al mutex_stack\n");
-            
+
             if(pthread_mutex_lock(&cargo.mutex_stack) != 0) {   //lock sulla struct stack_elem
                 fprintf(stderr, "sender:pthread_mutex_lock:mutex_stack\n");
                 exit(EXIT_FAILURE);
             }
             usleep(10000);
-            
+
             pop_pkt(cargo.stack,&sndpkt);
             if(sndpkt.seq>(*cargo.base)){
                 //(*cargo.nextseqnum)++;
@@ -253,7 +253,7 @@ printf("(*cargo.nextseqnum) -(*cargo.base): %d\n",(*cargo.nextseqnum)-(*cargo.ba
                 fprintf(stderr, "sender:pthread_mutex_lock:mutex_stack\n");
                 exit(EXIT_FAILURE);
             }
-printf("invio pacchetto con #seq: %d\n",sndpkt.seq);                      
+printf("invio pacchetto con #seq: %d\n",sndpkt.seq);
             if (simulateloss(0)) check(send(cargo.sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0), "thread_sendpkt:send:cargo");
         }
     }
@@ -288,7 +288,7 @@ printf("thr entra in 0\n");
         }
         if(n==-1){
 printf("thr entra in -1\n");
-        }  
+        }
 
         if(n>0){
 printf("thr entra in >0\n");
@@ -336,7 +336,7 @@ printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo.initia
                 if(rcvack.ack+1 == cargo.initialseq+cargo.numpkts){     //FINE TRASMISSIONE
                     printf("\t(Server:get tid:%d) Received last ack for file\n", me);
                     (*(cargo.base))++;//evito ulteriori (inutile)ritrasmissioni
-                    
+
                     clock_gettime( CLOCK_REALTIME,&end_upload);
                     float uploading = ((end_upload.tv_sec - cargo.time_upload->tv_sec) + (1e-9)*(end_upload.tv_nsec - cargo.time_upload->tv_nsec));
 printf("Durata upload: %f ns\n",uploading);
@@ -348,7 +348,7 @@ printf("Durata upload: %f ns\n",uploading);
                 //memset(&rcvack,0,sizeof(struct pkt));
                 //goto transmit;
             }
-            
+
             else if(rcvack.ack<=(*cargo.base)-1 ){   //ack duplicato   //manca da aumentare counter
                 if ((cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) >= 3) { // 3 duplicated acks
                     //(*cargo.base)=rcvack.ack+1;
@@ -370,7 +370,7 @@ printf("Durata upload: %f ns\n",uploading);
     printf("(Server:thread_sendpkt tid%d) Locked the stack to put pkt after retransmit and pushed the packet seq:%d back into the stack\n\n", me, sndpkt.seq);
                     //check(semop(cargo.sem_readypkts, &sembuf_signal, 1),"thread_sendpkt:semop:signal:sem_readypkts");
                     //check(semop(SemSnd_Wndw, &sembuf_signal, 1),"thread_sendpkt:semop:signal:SemSnd_Wndw");
-                    
+
                     if(pthread_mutex_unlock(&cargo.mutex_stack) != 0){
                         fprintf(stderr, "thread_sendpkt:pthread_mutex_unlock:mutex_stack\n");
                         exit(EXIT_FAILURE);
@@ -406,7 +406,7 @@ printf("rec fuori dal while\n");
         //check(pthread_mutex_unlock(&cargo.mutex_ack_counter),"THREAD: error unlock Ack Counters-2");
     }
 }
-    
+
 
 void thread_sendpkt(void *arg){
     int me = (int)pthread_self();
@@ -526,7 +526,7 @@ printf("new timeout_Interval: %d ns\n",*(cargo.timeout_Interval));
             //memset(&rcvack,0,sizeof(struct pkt));
             goto transmit;
         }
-        
+
         else if(rcvack.ack<=(*cargo.base)-1 ){   //ack duplicato   //manca da aumentare counter
             if ((cargo.ack_counters[(rcvack.ack) - (cargo.initialseq)]) == 3) { // 3 duplicated acks
                 (*cargo.base)=rcvack.ack+1;
@@ -884,7 +884,7 @@ printf("creati i rec ack thread \n");
     sigemptyset(&act_lastack.sa_mask);
     act_lastack.sa_flags = 0;
     check(sigaction(SIGFINAL, &act_lastack, NULL), "get:sigaction:siglastack");
- 
+
     //signal(/*stop timer-base aggiornata*/);
     while((base-init)<=numpkts){
         usleep(2000);
@@ -900,9 +900,9 @@ printf("prima di dormire: oldbase %d\n",oldBase);
 printf("babbo si è svegliato: oldbase %d, newbase %d\n",oldBase,base);
         if (oldBase==base) {  //RITRASMISSIONEif (counter[oldBase - init]==0){
             check(pthread_mutex_lock(&mtxStack),"GET: error lock stack");
-            //push_pkt(&stackPtr,sendpkt[oldBase - init+2]); 
+            //push_pkt(&stackPtr,sendpkt[oldBase - init+2]);
             //push_pkt(&stackPtr,sendpkt[oldBase - init+1]);  //o handler()signal(sem_pkts_to_send)
-            push_pkt(&stackPtr,sendpkt[oldBase - init]); 
+            push_pkt(&stackPtr,sendpkt[oldBase - init]);
 printf("HO PUSHATO PKT %d, relativo %d\n",oldBase, oldBase -init);
             check(pthread_mutex_unlock(&mtxStack),"GET: error lock stack");
 printf("BABBO HA LIBERATO IL LOCK ALLA PILA\n");
@@ -922,7 +922,7 @@ printf("BABBO alza semGlobale\n");
         }
         timer=0;
         //check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");
-    
+
     }
     //return 1;
 }
@@ -1078,52 +1078,43 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
 /*
  *  function: createlist
  *  ----------------------------
- *  Print list on
+ *  Create list from folder
  *
- *  res: pointer to string where the result is stored
  *  path: folder to list
  *
  *  return: -
  *  error: -
  */
- void createlist(const char *path) {
+void createlist(const char *path) {
+    DIR *folder;
+    struct dirent **filename;
+    int fd;
+    int n;
 
-        int fdl;
-        int i;
-        int n_entry;
-        DIR *dirp = NULL;
-        struct dirent **filename;
+    if(pthread_mutex_lock(&mutex_list) !=0){
+        fprintf(stderr, "createlist:pthread_mutex_lock:mutex_list\n");
+        exit(EXIT_FAILURE);
+    }
 
-        //PRENDO IL LOCK IL MUTEX
-        check(pthread_mutex_lock(&mtxlist),"Server:pthread_mutexlist_lock");
+    folder = check_mem(opendir(path), "createlist:opendir:path");
+    fd = check(open(SERVER_LIST_FILE, O_CREAT|O_RDWR|O_TRUNC, 0666), "createlist:open:list");
 
-          check_mem(dirp = opendir(path),"list nell'apertura della directory");
+    n = check(scandir(path, &filename, NULL, alphasort), "createlist:scandir");
 
-          printf("\nCONTENUTO DELLA CARTELLA [%s] \n",path);
-          printf("CONTENUTO DELLA CARTELLA [%s] \n",path);
-          /*Crea un file che contiene la filelist*/
+    for(int i=2; i<n; i++){ // ignore . and ..
+        dprintf(fd, "%s\n", filename[i]->d_name);
+    }
 
-          check(fdl = open("list.txt",O_CREAT | O_RDWR | O_TRUNC,0644),"server:open server_files.txt");
+    closedir(folder);
+    folder = NULL;
 
-          check(n_entry =scandir(path,&filename,NULL,alphasort) ,"server:scandir");
+    if(pthread_mutex_unlock(&mutex_list) !=0){
+        fprintf(stderr, "createlist:pthread_mutex_unlock:mutex_list\n");
+        exit(EXIT_FAILURE);
+    }
 
-          for(i = 0; i < n_entry; i++){
-
-            if (strcmp(filename[i]->d_name, ".")>0){
-                if(strcmp(filename[i]->d_name, "..")>0){
-                    printf("%s \n",filename[i]->d_name);
-                    dprintf(fdl,"%s\n",filename[i]->d_name);
-                }
-            }
-          }
-
-          closedir(dirp);
-          dirp = NULL;
-
-        //LASCIO IL MUTEX
-        check(pthread_mutex_unlock(&mtxlist),"server:pthread_mutex_lock");
-
- }
+printf("Created new server list\n");
+}
 
 /*
  *  function: list
@@ -1134,44 +1125,47 @@ printf("[Server] il file %s e' stato correttamente scaricato\n",(char *)pathname
  *  error: -
  */
 void list(void *arg) {
-    struct pkt listpkt;
-    struct pkt rcvack;
+    int me = (int)pthread_self();
     struct elab synop = *((struct elab*)arg);
-    struct pkt synack;
-    int fdl;
-    int aux;
-    char filedata[DATASIZE];
-    int n;
     int opersd;
+    struct pkt synack, cargo, ack;
+    int fd, listsize;
+    char listdata[DATASIZE];
+    int n;
 
     opersd = serve_op(&synack, synop);
-    if(opersd < 0){
-printf("Operation op:%d seq:%d unsuccessful\n", synop.clipacket.op, synop.clipacket.seq);
+    if(opersd < 1){
+printf("(Server:list tid:%d) Operation op:%d seq:%d unsuccessful, exiting operation\n\n", me, synop.clipacket.op, synop.clipacket.seq);
         pthread_exit(NULL);
     }
+printf("(Server:put tid:%d) Handshake successful, continuing operation\n\n", me);
 
-    createlist(synop.clipacket.data);
-    check(fdl = open("list.txt",O_RDONLY,0644),"server:open server_files.txt");
-
-    aux = read(fdl, filedata, DATASIZE);
-
-    listpkt = makepkt(CARGO, synack.ack + 1, 0, 0, aux, filedata);
-
-printf("[Server] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", listpkt.op, listpkt.seq, listpkt.ack, listpkt.pktleft, listpkt.size, (char *)listpkt.data);
-	if (simulateloss(0)) check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
-	/*if (simulateloss(0))*/ check(send(opersd, &listpkt, listpkt.size + HEADERSIZE, 0), "main:send");
-printf("[Server] Waiting for ack...\n");
-    n = recv(opersd, &rcvack, MAXPKTSIZE, 0);
-
-    if(n<1){
-printf("No ack response from client\n");
-        close(opersd);
+    list_dbit = 1; // TMP set to 0 after every create list, to 1 or more after every put completed
+    if(list_dbit){
+        createlist(synop.clipacket.data);
+        list_dbit = 0;
     }
-    if(rcvack.ack == listpkt.seq){
-printf("It's ok, i received ack about listpkt \n");
-    }else{
-printf("there are problems, not response ack from client \n");
+
+    fd = check(open(SERVER_LIST_FILE, O_RDONLY, 0644), "list:open:list.txt");
+    listsize = check(read(fd, listdata, DATASIZE), "list:read:fd");
+    cargo = makepkt(CARGO, synack.ack + 1, synack.seq, 0, listsize, listdata);
+
+sendlist:
+printf("[Server:list tid:%d sockd:%d] Sending list [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n", me, opersd, cargo.op, cargo.seq, cargo.ack, cargo.pktleft, cargo.size, (char *)cargo.data);
+	if (simulateloss(0)) check(send(opersd, &cargo, HEADERSIZE+cargo.size, 0), "list:send:cargo");
+
+    n = recv(opersd, &ack, MAXPKTSIZE, 0);
+
+    if(n>1){
+printf("[Server:list tid:%d sockd:%d] Received ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, opersd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, ack.data);
+        if(ack.op == ACK_NEG){
+            goto sendlist;
+        }
     }
+
+printf("\tOperation seq:%d completed successfully\n", synop.clipacket.seq);
+    close(opersd);
+    pthread_exit(NULL);
 }
 
 int main(int argc, char const *argv[]){
@@ -1204,7 +1198,7 @@ int main(int argc, char const *argv[]){
     free_pages_rcvbuf = check_mem(malloc(CLIENT_RCVBUFSIZE * sizeof(struct index)), "main:init:malloc:free_pages_rcvbuf");
     init_index_stack(&free_pages_rcvbuf, CLIENT_RCVBUFSIZE);
     check(pthread_mutex_init(&mutex_rcvbuf, NULL), "main:pthread_mutex_init:mutex_rcvbuf");
-
+    check(pthread_mutex_init(&mutex_list, NULL), "main:pthread_mutex_init:mutex_list");
     SemSnd_Wndw = check(semget(IPC_PRIVATE,1,IPC_CREAT|IPC_EXCL|0666),"main:semget:SemSnd_Wndw");
     check(semctl(SemSnd_Wndw,0,SETVAL,SERVER_SWND_SIZE), "main:semctl:SemSnd_Wndw");
 

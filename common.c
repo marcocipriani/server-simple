@@ -96,7 +96,7 @@ struct sender_info{
     struct pkt *array;
     int *rwnd;
     int *nextseqnum;
-    
+
 };
 
 struct index{
@@ -431,7 +431,7 @@ void seedpicker() {
 	srand(seed);
 }
 int simulateloss(int isClient){
-	int i,j;
+	int i;
     if(isClient){
         //h+=1;
         srand(time(NULL));

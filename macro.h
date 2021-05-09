@@ -4,6 +4,7 @@
 #define BACKLOG 10
 #define DEFAULT_PATH "~"
 #define SERVER_FOLDER "./server-files/"
+#define SERVER_LIST_FILE "./server-files/list.txt"
 #define SERVER_RCVBUFSIZE 30
 #define SERVER_TIMEOUT 60
 #define SERVER_NUMTHREADS 10
@@ -45,6 +46,7 @@
 // ACK and validity status
 #define CARGO_OK "received correctly"
 #define CARGO_MISSING "missing base packet"
+#define NOTHING_RECEIVED "no packet received"
 #define FILE_AVAILABLE "File available"
 #define FILE_NOT_AVAILABLE "File not available"
 #define RECEIVER_WINDOW_STATUS "This packet contains receiver window size"
