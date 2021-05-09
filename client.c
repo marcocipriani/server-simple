@@ -2,9 +2,7 @@
 #include "common.c"
 
 struct sockaddr_in main_servaddr;
-struct sockaddr_in cliaddr; //TODEL
 socklen_t len;
-int initseqserver; // TODEL
 void **tstatus;
 int sem_sender_wnd; // global semaphore for sending packets
 char rcvbuf[CLIENT_RCVBUFSIZE*(DATASIZE)]; // if local
