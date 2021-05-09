@@ -102,7 +102,7 @@ void kill_handler(){
     for(int i=0;i<CLIENT_NUMTHREADS;i++){
         pthread_cancel(ttid[i]);
     }
-printf("Client operation completed\n\n");
+printf("\tClient operation completed\n\n");
     pthread_exit(NULL);
 };
 
@@ -220,7 +220,7 @@ printf("(Client:receiver tid:%d) Dequeued %d packet and stored it in rcvbuf[%d]\
             }
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(CARGO_OK), CARGO_OK);
 printf("[Client:receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-            /*if (simulateloss(1))*/ check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
+            if (simulateloss(1)) check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
 
             // tell the thread doing writer to write base cargo packet
             signal_writebase.sem_num = 0;
@@ -321,10 +321,9 @@ receive:
     n = recv(t_info.sockd, &cargo, MAXPKTSIZE, 0);
 
     if(n==0 || // nothing received
-        (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 /*|| // packet with seq out of range
-        (cargo.seq - t_info.init_transfer_seq) < ((*t_info.rcvbase)-t_info.init_transfer_seq)-1*/){ // packet processed yet
-        ack = makepkt(ACK_POS, *t_info.nextseqnum, (*t_info.rcvbase)-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
-        usleep(1000);
+        (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 || // packet with seq out of range
+        (cargo.seq - t_info.init_transfer_seq) < ((*t_info.rcvbase)-t_info.init_transfer_seq)){ // packet processed yet
+        ack = makepkt(ACK_POS, *t_info.nextseqnum, (*t_info.rcvbase)-1, receiver_window, strlen(CARGO_OK), CARGO_OK);
         if (simulateloss(1)) check(send(t_info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
         goto receive;
     }
@@ -529,49 +528,6 @@ printf("(sender: tid%d) Locked the stack to put pkt after retransmit and pushed 
     }
 
 };
-/*
-void thread_sendpkt(int sockd, void *arg){
-    struct elab2 *cargo; // = sender_info t_info;
-    // then update common
-    struct pkt sndpkt, rcvack;
-
-    int me = (int)pthread_self();
-    struct sockaddr servaddr;
-
-    cargo = (struct elab2 *)arg;
-    me = (cargo->thpkt.seq) - (cargo->initialseq); // numero thread
-    sndpkt = makepkt(5, cargo->thpkt.seq, 0, cargo->thpkt.pktleft, cargo->thpkt.size, cargo->thpkt.data);
-printf("sono il thread # %d \n", me);
-
-    sendto(sockd, &sndpkt, HEADERSIZE + sndpkt.size, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
-check_ack:
-    check(recvfrom(sockd, &rcvack, MAXPKTSIZE, 0, (struct sockaddr *)&servaddr, &len), "CLIENT-put-thread:recvfrom ack-client");
-    // lock buffer
-printf("sono il thread # %d e' ho ricevuto l'ack del pkt #%d \n", me, (rcvack.ack) - (cargo->initialseq) + 1);
-printf("valore di partenza in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-
-    if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 0) {
-    cargo->p[(rcvack.ack) - (cargo->initialseq)] = (int)cargo->p[(rcvack.ack) - (cargo->initialseq)] + 1;
-    printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-    // unlock buffer
-
-printf("sono il thread # %d e muoio \n", me);
-pthread_exit(tstatus);
-    } else if ((cargo->p[(rcvack.ack) - (cargo->initialseq)]) == 2) {
-printf("dovrei fare una fast retransmit del pkt con #seg: %d/n", rcvack.ack);
-    (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
-printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-        // unlock buffer
-        goto check_ack;
-    }else{
-        (cargo->p[(rcvack.ack) - (cargo->initialseq)]) = (cargo->p[(rcvack.ack) - (cargo->initialseq)]) + 1;
-printf("pacchetto già ricevuto aspetto per la fast retransmit \n");
-printf("valore aggiornato in counter[%d] : %d \n", (rcvack.ack) - (cargo->initialseq), cargo->p[(rcvack.ack) - (cargo->initialseq)]);
-        // unlock buffer
-        goto check_ack;
-    }
-}
-*/
 
 /*
  *  function: list
@@ -598,6 +554,7 @@ printf("(Client:list tid:%d) Handshake successful, continuing operation\n\n", me
 recvlist:
     check_mem(memset(&cargo, 0, MAXPKTSIZE), "list:memset:cargo");
     check_mem(memset(&ack, 0, MAXPKTSIZE), "list:memset:ack");
+    printf("\tWaiting for list in max %d seconds\n", CLIENT_TIMEOUT);
     n = recv(sockd, &cargo, MAXPKTSIZE, 0);
 
     if(n<1){

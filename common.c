@@ -20,7 +20,6 @@
 
 #include "macro.h"
 
-int h=1;
 struct pkt{
     int op; // op codes in macro.h
     int seq;
@@ -408,22 +407,14 @@ void fflush_stdin(){
 /*
  *  function: simulate_loss
  *  ----------------------------
- *  Toss a coin to perform an operation, simulating a packet loss in sender
+ *  Roll a d100 to perform an operation, simulating a packet loss in sender
  *
  *  usage: if(simulate_loss()) send(...)
  *
  *  return: 1 (head) if operation will be performed, 0 (tail) if not
  *  error: -
  */
-int simulate_loss(){
-    int i = (rand()%2);
-    if(i==0){
-printf("simulate_loss: Next send will be lost\n");
-        return 0;
-    }
-    return 1;
-}
-
+int h=1;
 void seedpicker() {
 	time_t seed;
     h+=1;
@@ -433,7 +424,7 @@ void seedpicker() {
 int simulateloss(int isClient){
 	int i;
     if(isClient){
-        //h+=1;
+        h+=1;
         srand(time(NULL));
 		i=((rand()%100)+1);
         printf("num.casuale: %d\n",i);

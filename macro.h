@@ -21,7 +21,7 @@
 #define CLIENT_TIMEOUT 10
 #define CLIENT_NUMTHREADS 1
 #define CLIENT_SWND_SIZE 10
-#define PACKET_LOSS_CLIENT 0
+#define PACKET_LOSS_CLIENT 30
 
 // Sender signals
 #define SIGFINAL SIGUSR1
