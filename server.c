@@ -256,18 +256,17 @@ printf("invio pacchetto con #seq: %d\n",sndpkt.seq);
     }
 }
 
-void rec (void *arg){
+void rec(void *arg){
      int me = (int)pthread_self();
     struct sender_info cargo;//t_info
-    struct pkt sndpkt, rcvack;
+    struct pkt rcvack;
     int k,n;
-    int base; // unused
     struct sembuf sembuf_wait, sembuf_signal;
     cargo = *((struct sender_info *)arg);
-    struct timespec end,end_upload;
+    struct timespec end_upload;
+    // struct timespec end;
 
     int opersd = cargo.sockd;
-    socklen_t len;
 
     sembuf_wait.sem_num = 0;
     sembuf_wait.sem_op = -1;

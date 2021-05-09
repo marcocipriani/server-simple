@@ -703,42 +703,42 @@ printf("\n(Client:put tid:%d) Started transfer of file %s, %d packets estimated\
     act_lastack.sa_flags = 0;
     check(sigaction(SIGFINAL, &act_lastack, NULL), "put:sigaction:siglastack");
 
-    while(((*t_info.base)-t_info.initialseq)<=t_info.numpkts){
-        usleep(2000);
-       /* oper.sem_num = 0;
-        oper.sem_op = -1;
-        oper.sem_flg = SEM_UNDO;
-
-        check(semop(semTimer,&oper,1),"GET: error wait semTimer");   //WAIT su semTimer*/
-        //check(pthread_mutex_lock(&mtxTime),"GET: error lock time");
-        oldbase = *t_info.base;
-printf("prima di dormire: oldbase %d\n", oldbase);
-        usleep(timeout_Interval);
-printf("babbo si è svegliato: oldbase %d, newbase %d\n",oldBase,base);
-        if (oldBase==base) {  //RITRASMISSIONEif (counter[oldBase - init]==0){
-            check(pthread_mutex_lock(&mtxStack),"GET: error lock stack");
-            check(push_pkt(&stackPtr,sendpkt[oldBase - init]), "get:push_pkt:sendpkt[oldBase-init]");
-printf("HO PUSHATO PKT %d, relativo %d\n",oldBase, oldBase -init);
-            check(pthread_mutex_unlock(&mtxStack),"GET: error lock stack");
-printf("BABBO HA LIBERATO IL LOCK ALLA PILA\n");
-
-            oper.sem_num = 0;                                                 //se RITRASMISSIONE
-            oper.sem_op = 1;                                                  //signal a semPkt_to_send
-            oper.sem_flg = SEM_UNDO;
-
-            check(semop(semPkt_to_send,&oper,1),"GET: error signal semLocal ");
-printf("BABBO alza semLocale\n");
-            oper.sem_num = 0;                                                 //se RITRASMISSIONE
-            oper.sem_op = 1;                                                  //signal a semGlobal
-            oper.sem_flg = SEM_UNDO;
-
-            check(semop(SemSnd_Wndw,&oper,1),"GET: error signal semGlobal ");
-printf("BABBO alza semGlobale\n");
-        }
-        timer=0;
-        //check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");
-
-    }
+//     while(((*t_info.base)-t_info.initialseq)<=t_info.numpkts){
+//         usleep(2000);
+//        /* oper.sem_num = 0;
+//         oper.sem_op = -1;
+//         oper.sem_flg = SEM_UNDO;
+//
+//         check(semop(semTimer,&oper,1),"GET: error wait semTimer");   //WAIT su semTimer*/
+//         //check(pthread_mutex_lock(&mtxTime),"GET: error lock time");
+//         oldbase = *t_info.base;
+// printf("prima di dormire: oldbase %d\n", oldbase);
+//         usleep(timeout_Interval);
+// printf("babbo si è svegliato: oldbase %d, newbase %d\n",oldBase,base);
+//         if (oldBase==base) {  //RITRASMISSIONEif (counter[oldBase - init]==0){
+//             check(pthread_mutex_lock(&mtxStack),"GET: error lock stack");
+//             check(push_pkt(&stackPtr,sendpkt[oldBase - init]), "get:push_pkt:sendpkt[oldBase-init]");
+// printf("HO PUSHATO PKT %d, relativo %d\n",oldBase, oldBase -init);
+//             check(pthread_mutex_unlock(&mtxStack),"GET: error lock stack");
+// printf("BABBO HA LIBERATO IL LOCK ALLA PILA\n");
+//
+//             oper.sem_num = 0;                                                 //se RITRASMISSIONE
+//             oper.sem_op = 1;                                                  //signal a semPkt_to_send
+//             oper.sem_flg = SEM_UNDO;
+//
+//             check(semop(semPkt_to_send,&oper,1),"GET: error signal semLocal ");
+// printf("BABBO alza semLocale\n");
+//             oper.sem_num = 0;                                                 //se RITRASMISSIONE
+//             oper.sem_op = 1;                                                  //signal a semGlobal
+//             oper.sem_flg = SEM_UNDO;
+//
+//             check(semop(SemSnd_Wndw,&oper,1),"GET: error signal semGlobal ");
+// printf("BABBO alza semGlobale\n");
+//         }
+//         timer=0;
+//         //check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");
+//
+//     }
 
     free(localpathname);
 
