@@ -257,7 +257,7 @@ printf("invio pacchetto con #seq: %d\n",sndpkt.seq);
 }
 
 void rec(void *arg){
-     int me = (int)pthread_self();
+    int me = (int)pthread_self();
     struct sender_info cargo;//t_info
     struct pkt rcvack;
     int k,n;

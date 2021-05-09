@@ -564,7 +564,7 @@ recvlist:
     n = recv(sockd, &cargo, MAXPKTSIZE, 0);
 
     if(n<1){
-printf("[Client pid:%d sockd:%d] Sending ack to server \n",me, sockd);
+printf("[Client:list tid:%d sockd:%d] Sending negative ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
         ack = makepkt(ACK_NEG, synack.seq, cargo.seq, cargo.pktleft, strlen(NOTHING_RECEIVED), NOTHING_RECEIVED);
         synack.seq++;
         if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "list:send:ack:neg");
@@ -587,13 +587,13 @@ printf("[Client pid:%d sockd:%d] Received cargo from server [op:%d][seq:%d][ack:
             exit(EXIT_FAILURE);
         }
 
-        printf("\tAvailable files on server:\n%s", cargo.data);
+        printf("\tAvailable files on server:\n%s\n", cargo.data);
         close(fd);
     }else{
         printf("\tNo available file on server folder %s\n", (char *)arg);
     }
 
-printf("[Client pid:%d sockd:%d] Sending ack to server\n", me, sockd);
+printf("[Client:list tid:%d sockd:%d] Sending positive ack [op:%d][seq:%d][ack:%d][pktleft:%d][size:%d][data:%s]\n\n", me, sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
     ack = makepkt(ACK_POS, synack.seq, cargo.seq, 0, strlen(CARGO_OK), CARGO_OK);
     if (simulateloss(1)) check(send(sockd, &ack, ack.size, 0), "list:send:ack");
 
