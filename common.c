@@ -432,18 +432,20 @@ void seedpicker() {
 }
 int simulateloss(int isClient){
 	int i,j;
-		seedpicker();
+    if(isClient){
+        //h+=1;
+        srand(time(NULL));
 		i=((rand()%100)+1);
         printf("num.casuale: %d\n",i);
-		if(isClient){
-			if(i<=PACKET_LOSS_CLIENT){
-				printf("\npacket lost by Client!\n");
-				return 0;
-			}else return 1;
-		}else {
-			if(i<=PACKET_LOSS_SERVER){
-				printf("\npacket lost by Server!\n");
-				return 0;
-				}else return 1;
-		}
+        if(i<=PACKET_LOSS_CLIENT){
+            printf("\npacket lost by Client!\n");
+            return 0;
+        }else return 1;
+    }else {
+		i=((((rand())*(rand()))%100)+1);
+        if(i<=PACKET_LOSS_SERVER){
+            printf("\npacket lost by Server!\n");
+            return 0;
+        }else return 1;
+    }
 }

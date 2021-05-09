@@ -197,7 +197,7 @@ waitforpkt:
     pthread_mutex_lock(&info.mutex_rcvbuf);
 
     if(cargo.seq == PING){ // TODO last scenario of next if
-        ping = makepkt(ACK_NEG, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(RECEIVER_WINDOW_STATUS), RECEIVER_WINDOW_STATUS);
+        ping = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(RECEIVER_WINDOW_STATUS), RECEIVER_WINDOW_STATUS);
 printf("[Client:receiver tid:%d sockd:%d] Sending ping-receiver_window [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ping.op, ping.seq, ping.ack, ping.pktleft, ping.size, (char *)ping.data);
         if (simulateloss(1)) check(send(info.sockd, &ping, HEADERSIZE + ack.size, 0) , "receiver:send:ping-receiver_window");
         check_mem(memset((void *)&ping, 0, MAXPKTSIZE), "receiver:memset:ping");
@@ -220,7 +220,7 @@ printf("(Client:receiver tid:%d) Dequeued %d packet and stored it in rcvbuf[%d]\
             }
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(CARGO_OK), CARGO_OK);
 printf("[Client:receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ack:%d][pktleft/rwnd:%d][size:%d][data:%s]\n\n", me, info.sockd, ack.op, ack.seq, ack.ack, ack.pktleft, ack.size, (char *)ack.data);
-            if (simulateloss(1)) check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
+            /*if (simulateloss(1))*/ check(send(info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
 
             // tell the thread doing writer to write base cargo packet
             signal_writebase.sem_num = 0;
@@ -297,7 +297,7 @@ printf("(Client:get tid:%d) Handshake successful, continuing operation\n\n", me)
     t_info.last_packet_size = check_mem(malloc(sizeof(int)), "get:malloc:last_packet_size");
     t_info.filename = (char *)arg;
 
-    for(int t=0; t<CLIENT_NUMTHREADS; t++){
+    for(int t=0; t<1/*CLIENT_NUMTHREADS*/; t++){
         if(pthread_create(&ttid[t], NULL, (void *)receiver, (void *)&t_info) != 0){
             fprintf(stderr, "put:pthread_create:receiver%d", t);
             exit(EXIT_FAILURE);
@@ -324,6 +324,7 @@ receive:
         (cargo.seq - t_info.init_transfer_seq) > t_info.numpkts-1 /*|| // packet with seq out of range
         (cargo.seq - t_info.init_transfer_seq) < ((*t_info.rcvbase)-t_info.init_transfer_seq)-1*/){ // packet processed yet
         ack = makepkt(ACK_POS, *t_info.nextseqnum, (*t_info.rcvbase)-1, cargo.pktleft, strlen(CARGO_OK), CARGO_OK);
+        usleep(1000);
         if (simulateloss(1)) check(send(t_info.sockd, &ack, HEADERSIZE + ack.size, 0) , "receiver:send:ack-newbase");
         goto receive;
     }
