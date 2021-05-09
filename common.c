@@ -20,7 +20,7 @@
 
 #include "macro.h"
 
-int h;
+int h=1;
 struct pkt{
     int op; // op codes in macro.h
     int seq;
@@ -91,8 +91,12 @@ struct sender_info{
     int *estimatedRTT;
     struct sample startRTT;
     int *timeout_Interval;
+    struct timespec *time_upload;
     pthread_t father_pid;       //pid del padre
     struct pkt *array;
+    int *rwnd;
+    int *nextseqnum;
+
 };
 
 struct index{
@@ -427,19 +431,21 @@ void seedpicker() {
 	srand(seed);
 }
 int simulateloss(int isClient){
-	int i,j;
-		seedpicker();
+	int i;
+    if(isClient){
+        //h+=1;
+        srand(time(NULL));
 		i=((rand()%100)+1);
         printf("num.casuale: %d\n",i);
-		if(isClient){
-			if(i<=PACKET_LOSS_CLIENT){
-				printf("\npacket lost by Client!\n");
-				return 0;
-			}else return 1;
-		}else {
-			if(i<=PACKET_LOSS_SERVER){
-				printf("\npacket lost by Server!\n");
-				return 0;
-				}else return 1;
-		}
+        if(i<=PACKET_LOSS_CLIENT){
+            printf("\npacket lost by Client!\n");
+            return 0;
+        }else return 1;
+    }else {
+		i=((((rand())*(rand()))%100)+1);
+        if(i<=PACKET_LOSS_SERVER){
+            printf("\npacket lost by Server!\n");
+            return 0;
+        }else return 1;
+    }
 }
