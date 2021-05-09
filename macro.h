@@ -9,7 +9,7 @@
 #define SERVER_TIMEOUT 60
 #define SERVER_NUMTHREADS 10
 #define SERVER_SWND_SIZE 20
-#define PACKET_LOSS_SERVER 0
+#define PACKET_LOSS_SERVER 25
 
 #define TIMEINTERVAL 50000
 
@@ -21,7 +21,7 @@
 #define CLIENT_TIMEOUT 10
 #define CLIENT_NUMTHREADS 1
 #define CLIENT_SWND_SIZE 10
-#define PACKET_LOSS_CLIENT 0
+#define PACKET_LOSS_CLIENT 25
 
 // Sender signals
 #define SIGFINAL SIGUSR1
@@ -42,6 +42,7 @@
 #define ACK_NEG 5
 #define CARGO 6
 #define PING 7
+#define FIN 8
 
 // ACK and validity status
 #define CARGO_OK "received correctly"
@@ -50,3 +51,4 @@
 #define FILE_AVAILABLE "File available"
 #define FILE_NOT_AVAILABLE "File not available"
 #define RECEIVER_WINDOW_STATUS "This packet contains receiver window size"
+#define FIN_MSG "Last ack received, shutdown operation"

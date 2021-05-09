@@ -185,7 +185,7 @@ void receiver(void *arg){
     int me = (int)pthread_self();
     struct sembuf wait_readypkts;
     struct sembuf signal_writebase;
-    struct pkt cargo, ack, ping;
+    struct pkt cargo, ack, ping, fin;
     int i;
     struct receiver_info info = *((struct receiver_info *)arg);
 
@@ -235,6 +235,14 @@ printf("[Client:receiver tid:%d sockd:%d] Sending ack-newbase [op:%d][seq:%d][ac
 
             // tell the thread doing writer to write base cargo packet
             check(semop(info.sem_writebase, &signal_writebase, 1), "get:semop:signal:sem_writebase");
+
+            // send fin to server
+            if((*info.rcvbase)-info.init_transfer_seq == info.numpkts){
+                (*info.nextseqnum)++;
+                fin = makepkt(FIN, *info.nextseqnum, (*info.rcvbase)-1, 0, strlen(FIN_MSG), FIN_MSG);
+printf("[Client:receiver tid:%d sockd:%d] Sending fin [op:%d][seq:%d][ack:%d][size:%d][data:%s]\n\n", me, info.sockd, fin.op, fin.seq, fin.ack, fin.size, (char *)fin.data);
+                check(send(info.sockd, &fin, HEADERSIZE+fin.size, 0) , "receiver:send:fin");
+            }
         }else{
             (*info.nextseqnum)++;
             ack = makepkt(ACK_POS, *info.nextseqnum, (*info.rcvbase)-1, receiver_window, strlen(CARGO_MISSING), CARGO_MISSING);
