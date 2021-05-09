@@ -340,7 +340,13 @@ printf("[Client:get pid:%d sockd:%d] Received cargo [op:%d][seq:%d][ack:%d][pktl
     signal_readypkts.sem_flg = SEM_UNDO;
     check(semop(t_info.sem_readypkts, &signal_readypkts, 1), "get:semop:signal:sem_readypkts");
 
-    goto receive; // TODO goto->while
+    goto receive;
+
+    free(t_info.nextseqnum);
+    free(t_info.received_pkts);
+    free(t_info.file_cells);
+    free(t_info.rcvbase);
+    free(t_info.last_packet_size);
 }
 
 /*
@@ -617,9 +623,10 @@ void put(void *arg){
     struct sender_info t_info; // transfer info for sender threads
     pthread_mutex_t mutex_stack, mutex_ack_counter, mutex_time;
     struct sigaction act_lastack;
+    int oldbase; // base before sleep, to see if base changed
     int timer;
     int rtt = -1;
-    int estimatedRTT, timeout_Interval, devRTT;
+    int estimatedRTT, timeout_Interval = TIMEINTERVAL, devRTT;
     struct timespec start;
     struct sample startRTT;
 
@@ -660,7 +667,7 @@ printf("(Client:put tid:%d) Pushed cargo packet #%d into the stack of packets re
 
     /*** Filling info for threads ***/
     t_info.sem_readypkts = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666), "put:semget:sem_readypkts");
-    check(semctl(t_info.sem_readypkts, t_info.numpkts, SETVAL, 0), "put:semctl:sem_readypkts");
+    check(semctl(t_info.sem_readypkts, 0, SETVAL, t_info.numpkts), "put:semctl:sem_readypkts");
     t_info.semTimer = check(semget(IPC_PRIVATE, 1, IPC_CREAT|IPC_EXCL|0666), "put:semget:semTimer");
     check(semctl(t_info.semTimer, 0, SETVAL, 0), "put:semctl:semTimer");
     check(pthread_mutex_init(&mutex_stack, NULL), "put:pthread_mutex_init:mutex_ack_counter");
@@ -696,7 +703,44 @@ printf("\n(Client:put tid:%d) Started transfer of file %s, %d packets estimated\
     act_lastack.sa_flags = 0;
     check(sigaction(SIGFINAL, &act_lastack, NULL), "put:sigaction:siglastack");
 
-    // CONTINUE
+    while(((*t_info.base)-t_info.initialseq)<=t_info.numpkts){
+        usleep(2000);
+       /* oper.sem_num = 0;
+        oper.sem_op = -1;
+        oper.sem_flg = SEM_UNDO;
+
+        check(semop(semTimer,&oper,1),"GET: error wait semTimer");   //WAIT su semTimer*/
+        //check(pthread_mutex_lock(&mtxTime),"GET: error lock time");
+        oldbase = *t_info.base;
+printf("prima di dormire: oldbase %d\n", oldbase);
+        usleep(timeout_Interval);
+printf("babbo si è svegliato: oldbase %d, newbase %d\n",oldBase,base);
+        if (oldBase==base) {  //RITRASMISSIONEif (counter[oldBase - init]==0){
+            check(pthread_mutex_lock(&mtxStack),"GET: error lock stack");
+            check(push_pkt(&stackPtr,sendpkt[oldBase - init]), "get:push_pkt:sendpkt[oldBase-init]");
+printf("HO PUSHATO PKT %d, relativo %d\n",oldBase, oldBase -init);
+            check(pthread_mutex_unlock(&mtxStack),"GET: error lock stack");
+printf("BABBO HA LIBERATO IL LOCK ALLA PILA\n");
+
+            oper.sem_num = 0;                                                 //se RITRASMISSIONE
+            oper.sem_op = 1;                                                  //signal a semPkt_to_send
+            oper.sem_flg = SEM_UNDO;
+
+            check(semop(semPkt_to_send,&oper,1),"GET: error signal semLocal ");
+printf("BABBO alza semLocale\n");
+            oper.sem_num = 0;                                                 //se RITRASMISSIONE
+            oper.sem_op = 1;                                                  //signal a semGlobal
+            oper.sem_flg = SEM_UNDO;
+
+            check(semop(SemSnd_Wndw,&oper,1),"GET: error signal semGlobal ");
+printf("BABBO alza semGlobale\n");
+        }
+        timer=0;
+        //check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");
+
+    }
+
+    free(localpathname);
 
 }
 

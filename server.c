@@ -256,7 +256,7 @@ printf("invio pacchetto con #seq: %d\n",sndpkt.seq);
     }
 }
 
-void rec (void *arg){
+void rec(void *arg){
      int me = (int)pthread_self();
     struct sender_info cargo;//t_info
     struct pkt rcvack;
@@ -628,6 +628,7 @@ printf("(Server:writer tid:%d) Written %d bytes from rcvbuf[%d] to %s\n\n", me, 
         pthread_mutex_unlock(&info.mutex_rcvbuf);
     }
 
+    free(localpathname);
     close(fd);
     pthread_kill(ttid[CLIENT_NUMTHREADS + 1], SIGFINAL);
     pthread_exit(NULL);
@@ -915,7 +916,6 @@ printf("BABBO alza semGlobale\n");
         //check(pthread_mutex_unlock(&mtxTime),"GET: error unlock time");
 
     }
-    //return 1;
 }
 
 /*
